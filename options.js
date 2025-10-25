@@ -1497,8 +1497,6 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
             document.getElementById('showReloadTip').innerText = tlang("Teams账号解绑成功。","Teams account unbound successfully.");
             let TeamsBidingBtn = document.getElementById('bindMSAccountsBtn');
             TeamsBidingBtn.innerText = tlang("进入账号绑定","Bind Teams Account");
-            chrome.storage.local.set({"MSaccessToken": ""});
-            chrome.storage.local.set({"MSrefresh_token": ""});
             document.body.removeChild(modal); // 关闭模态窗口
         });
     }   

@@ -1401,7 +1401,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             handleShowProcess(message.data, message.additionalData);
             break;
         case "bp-unbindTeams":
-            T_removeConsent();
+            // Remove consent, then clear stored tokens
+            T_removeConsent()
+                .finally(() => {
+                    chrome.storage.local.set({ "MSaccessToken": "" });
+                    chrome.storage.local.set({ "MSrefresh_token": "" });
+                });
             break;
         case "bp-openSettings":
             chrome.runtime.openOptionsPage();
@@ -2282,14 +2287,14 @@ async function T_SetAssignmentAlert_XBAssignment() {
                         startTime = startDate.toISOString();
                     }
                     
-                    let gcId = "GCalcAutoSync_Tasks_XB_"+assignment.endTime+assignment.typeName+assignment.subjectName[0]+assignment.subjectName[4];
+                    let gcId = "GCalcAutoSync_Tasks_XB_"+assignment.endTime+assignment.name+assignment.subjectName[0]+assignment.subjectName[4];
                     let event = {
                         startTime: startTime,
                         endTime: endTimeDate.toISOString(),
                         title: "[Due] " + assignment.typeName,
                         id: assignment.id,
                         location: assignment.subjectName,
-                        content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.typeName}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p><a class="button" href="#">${tlang("查看任务详细","Click here to see task details")}</a></p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none" >gcMark{${gcId}}</p></div>`,
+                        content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.name}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p>${tlang("请前往校宝查看","Please check in Xiaobao")}</p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none" >gcMark{${gcId}}</p></div>`,
                         tag: "GCalcAutoSync_Tasks_XB",
                         reminderMinutesBeforeStart: 360
                     };
@@ -2340,7 +2345,7 @@ async function M_BindMSAccount(xbAccount) {
                 xbAccount: xbAccount
             });
             M_send_comp_msg("MSAccountBinded", null, 0);
-            M_StartMSFeatures();
+            
         } else {
             console.error("M_BindMSAccount[FetchTeamsUserProfile] Error:", userProfile.error);
             M_send_comp_msg("MSAccountBindFailed", userProfile.error+("  [MS]extId:")+chrome.runtime.id, 0);
@@ -2861,6 +2866,13 @@ async function T_removeConsent(grantId = null, attempt = 0) {
 
     try {
         let targetGrantId = grantId;
+        // Defensive: ensure targetGrantId is a non-empty string ID
+        if (typeof targetGrantId !== 'string' || !targetGrantId.trim()) {
+            if (targetGrantId !== null && targetGrantId !== undefined) {
+                console.warn("[T_removeConsent] Ignoring non-string grantId:", typeof targetGrantId);
+            }
+            targetGrantId = null;
+        }
 
         if (!targetGrantId) {
             const requiredScopes = new Set(SCOPES.split(/\s+/).filter(Boolean));
