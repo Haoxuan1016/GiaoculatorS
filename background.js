@@ -161,6 +161,51 @@ async function getFromChromeStorage(keyName) {
     }
 }
 
+function ensureBeingSyncedOrder(rawList) {
+    let list;
+    if (Array.isArray(rawList)) {
+        list = rawList.slice();
+    } else if (rawList && typeof rawList === 'object') {
+        list = Object.values(rawList);
+    } else {
+        list = [];
+    }
+    const seen = new Set();
+    const ordered = [];
+    for (const item of list) {
+        if (item === undefined || item === null) {
+            continue;
+        }
+        if (!seen.has(item)) {
+            seen.add(item);
+            ordered.push(item);
+        }
+    }
+    return ordered;
+}
+
+async function loadBeingSynced() {
+    const raw = await getFromChromeStorage("MS_BeingSynced");
+    return ensureBeingSyncedOrder(raw);
+}
+
+async function saveBeingSynced(list) {
+    await saveToChromeStorage("MS_BeingSynced", ensureBeingSyncedOrder(list));
+}
+
+function appendBeingSynced(list, id) {
+    if (id === undefined || id === null) {
+        return ensureBeingSyncedOrder(list);
+    }
+    const ordered = ensureBeingSyncedOrder(list);
+    const existingIndex = ordered.indexOf(id);
+    if (existingIndex !== -1) {
+        ordered.splice(existingIndex, 1);
+    }
+    ordered.push(id);
+    return ordered;
+}
+
 function buildLegacySubjectKey(semesterId, subjectId) {
     return `${semesterId}|${subjectId}`;
 }
@@ -2164,10 +2209,7 @@ async function T_SetAssignmentAlert_MSAssignment() {
         assignments=assignments?assignments:[]
         if (assignments) {
             let TotalEvents = []
-            let beingSynced = await getFromChromeStorage("MS_BeingSynced") || [];
-            if(beingSynced==null){
-                beingSynced = [];
-            }
+            let beingSynced = await loadBeingSynced();
             assignments.forEach(assignment => {
                 // Format endTime to UTC+8 and display as YYYY-MM-DD HH:MM
                 let endTimeUTC8 = "";
@@ -2242,10 +2284,7 @@ async function T_SetAssignmentAlert_XBAssignment() {
             if (data && data.data && data.data.list) {
                 const assignments = data.data.list;
                 let TotalEvents = []
-                let beingSynced = await getFromChromeStorage("MS_BeingSynced") || [];
-                if(beingSynced==null){
-                    beingSynced = [];
-                }
+                let beingSynced = await loadBeingSynced();
                 
                 assignments.forEach(assignment => {
                     // Only process tasks with learningTaskState = 2 (unfinished)
@@ -2535,22 +2574,23 @@ async function T_initMS() {
     }
 }
 async function T_batchAddToMSCalender(events, accessToken) {
-	// events: [{startTime, endTime, location, title, content, tag}]
-	const BATCH_SIZE = 20;
-	let overallSuccess = 0;
-	let overallFailed = 0;
-	for (let i = 0; i < events.length; i += BATCH_SIZE) {
-		const batch = events.slice(i, i + BATCH_SIZE);
-		let beingSynced = await getFromChromeStorage("MS_BeingSynced");
-		if (beingSynced === null) {
-			beingSynced = [];
-		}
+        // events: [{startTime, endTime, location, title, content, tag}]
+        const BATCH_SIZE = 20;
+        let overallSuccess = 0;
+        let overallFailed = 0;
+        let beingSynced = await loadBeingSynced();
+        if (beingSynced.length > 100) {
+                // trim oldest items to keep storage size manageable while preserving insertion order
+                beingSynced = beingSynced.slice(beingSynced.length - 60);
+                await saveBeingSynced(beingSynced);
+        }
+        for (let i = 0; i < events.length; i += BATCH_SIZE) {
+                const batch = events.slice(i, i + BATCH_SIZE);
 
-        
-		const MAX_RETRY = 5;
-		let attempts = 0;
-		let pendingItems = batch.map((event, idxInBatch) => ({ event, idxInBatch }));
-		let totalSuccess = 0;
+                const MAX_RETRY = 5;
+                let attempts = 0;
+                let pendingItems = batch.map((event, idxInBatch) => ({ event, idxInBatch }));
+                let totalSuccess = 0;
 
 		while (pendingItems.length > 0 && attempts < MAX_RETRY) {
 			const batchRequest = {
@@ -2608,25 +2648,25 @@ async function T_batchAddToMSCalender(events, accessToken) {
 				} else {
 					cntSuccessThisAttempt++;
 					totalSuccess++;
-					const regex = /gcMark{([^"]*)}/;
-					const suc = r.body;
-					const match = suc?.body?.content?.match?.(regex);
-					if (match && match[1]) {
-						beingSynced.push(match[1]);
-					}//如果想要记录保存要在event里面加入gcMark
-				}
-			}
+                                        const regex = /gcMark{([^"]*)}/;
+                                        const suc = r.body;
+                                        const match = suc?.body?.content?.match?.(regex);
+                                        if (match && match[1]) {
+                                                beingSynced = appendBeingSynced(beingSynced, match[1]);
+                                        }//如果想要记录保存要在event里面加入gcMark
+                                }
+                        }
 
-			console.log(`[T_BATCHADD]Attempt ${attempts + 1}: Success ${cntSuccessThisAttempt}, Failed ${failedIndicesThisAttempt.length}, TotalInThisAttempt ${pendingItems.length}`);
-			if (failedIndicesThisAttempt.length > 0) {
-				console.log(`[T_BATCHADD]Failed indices (relative to current 20-size chunk): ${failedIndicesThisAttempt.join(',')}`);
-			}
-			saveToChromeStorage("MS_BeingSynced", beingSynced);
+                        console.log(`[T_BATCHADD]Attempt ${attempts + 1}: Success ${cntSuccessThisAttempt}, Failed ${failedIndicesThisAttempt.length}, TotalInThisAttempt ${pendingItems.length}`);
+                        if (failedIndicesThisAttempt.length > 0) {
+                                console.log(`[T_BATCHADD]Failed indices (relative to current 20-size chunk): ${failedIndicesThisAttempt.join(',')}`);
+                        }
+                        await saveBeingSynced(beingSynced);
 
-			attempts++;
-			if (nextPending.length > 0 && attempts < MAX_RETRY) {
-				await delay(1000);
-			}
+                        attempts++;
+                        if (nextPending.length > 0 && attempts < MAX_RETRY) {
+                                await delay(1000);
+                        }
 			pendingItems = nextPending;
 		}
 
@@ -2677,10 +2717,7 @@ async function T_SyncToTeamsCalender() {
 						endTime: formatDate(endDate)
 					};
 				})();
-				let beingSynced = await getFromChromeStorage("MS_BeingSynced");
-				if(beingSynced==null){
-					beingSynced = [];
-				}
+                                let beingSynced = await loadBeingSynced();
 				try {
 					const response = await fetch(url, {
 						method: 'POST',
@@ -2737,10 +2774,10 @@ async function T_SyncToTeamsCalender() {
 							const startTime = convertToMSDate(shifted.begin);
 							const endTime = convertToMSDate(shifted.end);
 							let gcId = `GCalcAutoSync_Class${startTime}${endTime}${classInfo.name || ''}`;
-							if (beingSynced.includes(gcId)) {
-								console.log("skip", gcId);
-								return [];
-							}
+                                                        if (beingSynced.includes(gcId)) {
+                                                                console.log("skip", gcId);
+                                                                return [];
+                                                        }
 							return [{
 								startTime: startTime,
 								endTime: endTime,
@@ -2843,9 +2880,9 @@ async function T_removeFromMSCalender(category) {
         }
 
         console.log("________________removeFromMSCalendar",category);
-        let beingSynced = await getFromChromeStorage("MS_BeingSynced") || [];
+        let beingSynced = await loadBeingSynced();
         beingSynced = beingSynced.filter(item => !item.startsWith(category));
-        saveToChromeStorage("MS_BeingSynced",beingSynced)
+        await saveBeingSynced(beingSynced);
 
 
         const events = await fetchEventsWithCategory(category, accessToken);
