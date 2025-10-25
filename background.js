@@ -2832,7 +2832,7 @@ function convertToXBDate(isoString) {
 }
 
 
-async function T_removeFromMSCalendar(category) {
+async function T_removeFromMSCalender(category) {
     chrome.storage.local.get('MSaccessToken', async function(getResult){
         const accessToken = getResult.MSaccessToken;
         if(!getResult.MSaccessToken){
