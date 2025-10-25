@@ -2838,11 +2838,112 @@ async function T_removeFromMSCalendar(category) {
         beingSynced = beingSynced.filter(item => !item.startsWith(category));
         saveToChromeStorage("MS_BeingSynced",beingSynced)
 
-        
+
         const events = await fetchEventsWithCategory(category, accessToken);
         console.log("________________removeFromMSCalendar",category,"events",events);
         await batchDeleteEvents(events, accessToken);
-    });   
+    });
+}
+
+async function T_removeConsent(grantId = null, attempt = 0) {
+    const accessToken = await getFromChromeStorage("MSaccessToken");
+    if (!accessToken) {
+        console.warn("[T_removeConsent] No access token available.");
+        return { state: -1, error: "No access token found." };
+    }
+
+    const headers = {
+        'Authorization': `Bearer ${accessToken}`
+    };
+
+    try {
+        let targetGrantId = grantId;
+
+        if (!targetGrantId) {
+            const requiredScopes = new Set(SCOPES.split(/\s+/).filter(Boolean));
+            let listUrl = `https://graph.microsoft.com/v1.0/me/oauth2PermissionGrants`;
+            const allGrants = [];
+
+            while (listUrl) {
+                const listResponse = await fetch(listUrl, { headers });
+
+                if (listResponse.status === 401 && attempt === 0) {
+                    console.warn("[T_removeConsent] Access token expired when listing grants, refreshing...");
+                    await exchangeForAccess();
+                    return await T_removeConsent(grantId, attempt + 1);
+                }
+
+                if (!listResponse.ok) {
+                    let errorDetail;
+                    try {
+                        errorDetail = await listResponse.json();
+                    } catch (e) {
+                        errorDetail = await listResponse.text();
+                    }
+                    console.error("[T_removeConsent] Failed to list oauth2PermissionGrants:", listResponse.status, errorDetail);
+                    return { state: -1, error: `Failed to list oauth2PermissionGrants. Status: ${listResponse.status}`, detail: errorDetail };
+                }
+
+                const listData = await listResponse.json();
+                if (Array.isArray(listData.value)) {
+                    allGrants.push(...listData.value);
+                }
+                listUrl = listData['@odata.nextLink'] || null;
+            }
+
+            const matchingGrant = allGrants.find(grant => {
+                if (grant.clientId !== CLIENT_ID || !grant.scope) {
+                    return false;
+                }
+                const grantScopeSet = new Set(grant.scope.split(/\s+/).filter(Boolean));
+                if (grantScopeSet.size < requiredScopes.size) {
+                    return false;
+                }
+                for (const scope of requiredScopes) {
+                    if (!grantScopeSet.has(scope)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (!matchingGrant) {
+                console.log(`[T_removeConsent] No oauth2PermissionGrants found for client ${CLIENT_ID} with required scopes.`);
+                return { state: 0, message: 'No consent grant found.' };
+            }
+
+            targetGrantId = matchingGrant.id;
+        }
+
+        const deleteUrl = `https://graph.microsoft.com/v1.0/me/oauth2PermissionGrants/${targetGrantId}`;
+        const deleteResponse = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers
+        });
+
+        if (deleteResponse.status === 401 && attempt === 0) {
+            console.warn("[T_removeConsent] Access token expired when deleting grant, refreshing...");
+            await exchangeForAccess();
+            return await T_removeConsent(targetGrantId, attempt + 1);
+        }
+
+        if (deleteResponse.status === 204) {
+            console.log(`[T_removeConsent] Successfully removed consent grant ${targetGrantId}.`);
+            return { state: 1, id: targetGrantId };
+        }
+
+        let deleteErrorDetail;
+        try {
+            deleteErrorDetail = await deleteResponse.json();
+        } catch (e) {
+            deleteErrorDetail = await deleteResponse.text();
+        }
+        console.error("[T_removeConsent] Failed to delete oauth2PermissionGrant:", deleteResponse.status, deleteErrorDetail);
+        return { state: -1, error: `Failed to remove consent. Status: ${deleteResponse.status}`, detail: deleteErrorDetail };
+    } catch (error) {
+        console.error("[T_removeConsent] Unexpected error:", error);
+        return { state: -1, error: error.message || error };
+    }
 }
 async function fetchEventsWithCategory(category, accessToken) {
     const now = new Date().toISOString(); // Get the current date and time in ISO format
