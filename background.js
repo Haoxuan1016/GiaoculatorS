@@ -2546,6 +2546,7 @@ async function T_batchAddToMSCalender(events, accessToken) {
 			beingSynced = [];
 		}
 
+        
 		const MAX_RETRY = 5;
 		let attempts = 0;
 		let pendingItems = batch.map((event, idxInBatch) => ({ event, idxInBatch }));
