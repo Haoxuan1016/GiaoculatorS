@@ -1492,6 +1492,7 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
     });
     function unbindTeams() {
         console.log("Unbinding Teams account...");
+        chrome.runtime.sendMessage({ type: "bp-unbindTeams"});
         chrome.storage.local.set({ MSUserProfile: { state: 0, name: "", xbAccount: "" } }, function() {
             document.getElementById('showReloadTip').innerText = tlang("Teams账号解绑成功。","Teams account unbound successfully.");
             let TeamsBidingBtn = document.getElementById('bindMSAccountsBtn');
