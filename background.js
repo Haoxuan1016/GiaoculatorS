@@ -2863,33 +2863,59 @@ async function T_removeConsent(grantId = null, attempt = 0) {
         let targetGrantId = grantId;
 
         if (!targetGrantId) {
-            const listUrl = `https://graph.microsoft.com/v1.0/me/oauth2PermissionGrants?$filter=clientId eq '${CLIENT_ID}'`;
-            const listResponse = await fetch(listUrl, { headers });
+            const requiredScopes = new Set(SCOPES.split(/\s+/).filter(Boolean));
+            let listUrl = `https://graph.microsoft.com/v1.0/me/oauth2PermissionGrants`;
+            const allGrants = [];
 
-            if (listResponse.status === 401 && attempt === 0) {
-                console.warn("[T_removeConsent] Access token expired when listing grants, refreshing...");
-                await exchangeForAccess();
-                return await T_removeConsent(grantId, attempt + 1);
-            }
+            while (listUrl) {
+                const listResponse = await fetch(listUrl, { headers });
 
-            if (!listResponse.ok) {
-                let errorDetail;
-                try {
-                    errorDetail = await listResponse.json();
-                } catch (e) {
-                    errorDetail = await listResponse.text();
+                if (listResponse.status === 401 && attempt === 0) {
+                    console.warn("[T_removeConsent] Access token expired when listing grants, refreshing...");
+                    await exchangeForAccess();
+                    return await T_removeConsent(grantId, attempt + 1);
                 }
-                console.error("[T_removeConsent] Failed to list oauth2PermissionGrants:", listResponse.status, errorDetail);
-                return { state: -1, error: `Failed to list oauth2PermissionGrants. Status: ${listResponse.status}`, detail: errorDetail };
+
+                if (!listResponse.ok) {
+                    let errorDetail;
+                    try {
+                        errorDetail = await listResponse.json();
+                    } catch (e) {
+                        errorDetail = await listResponse.text();
+                    }
+                    console.error("[T_removeConsent] Failed to list oauth2PermissionGrants:", listResponse.status, errorDetail);
+                    return { state: -1, error: `Failed to list oauth2PermissionGrants. Status: ${listResponse.status}`, detail: errorDetail };
+                }
+
+                const listData = await listResponse.json();
+                if (Array.isArray(listData.value)) {
+                    allGrants.push(...listData.value);
+                }
+                listUrl = listData['@odata.nextLink'] || null;
             }
 
-            const listData = await listResponse.json();
-            if (!Array.isArray(listData.value) || listData.value.length === 0) {
-                console.log(`[T_removeConsent] No oauth2PermissionGrants found for client ${CLIENT_ID}.`);
+            const matchingGrant = allGrants.find(grant => {
+                if (grant.clientId !== CLIENT_ID || !grant.scope) {
+                    return false;
+                }
+                const grantScopeSet = new Set(grant.scope.split(/\s+/).filter(Boolean));
+                if (grantScopeSet.size < requiredScopes.size) {
+                    return false;
+                }
+                for (const scope of requiredScopes) {
+                    if (!grantScopeSet.has(scope)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+
+            if (!matchingGrant) {
+                console.log(`[T_removeConsent] No oauth2PermissionGrants found for client ${CLIENT_ID} with required scopes.`);
                 return { state: 0, message: 'No consent grant found.' };
             }
 
-            targetGrantId = listData.value[0].id;
+            targetGrantId = matchingGrant.id;
         }
 
         const deleteUrl = `https://graph.microsoft.com/v1.0/me/oauth2PermissionGrants/${targetGrantId}`;
