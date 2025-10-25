@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams Assignment Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 110%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .section {
+            background-color: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            backdrop-filter: blur(10px);
+            animation: fadeIn 0.6s ease-out;
+            transform: translateY(20px);
+            opacity: 0;
+            animation: slideUp 0.8s ease-out forwards;
+        }
+
+        @keyframes slideUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section:nth-child(1) {
+            animation-delay: 0.2s;
+        }
+
+        .section:nth-child(2) {
+            animation-delay: 0.4s;
+        }
+
+        .section h2 {
+            margin-bottom: 25px;
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 12px;
+            font-weight: 700;
+            font-size: 1.8rem;
+            position: relative;
+            display: inline-block;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .section-header h2 {
+            margin-bottom: 0;
+        }
+
+        .sort-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .sort-btn {
+            padding: 8px 16px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .sort-btn:hover {
+            background-color: #e9ecef;
+        }
+
+        .sort-btn.active {
+            background-color: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .section h2::after {
+            content: '';
+            position: absolute;
+            width: 60%;
+            height: 3px;
+            bottom: -3px;
+            left: 0;
+            background: linear-gradient(90deg, #3498db, #9b59b6);
+            transform: scaleX(0);
+            transform-origin: left;
+            animation: lineExpand 1s ease-out forwards;
+            animation-delay: 0.5s;
+        }
+
+        @keyframes lineExpand {
+            to {
+                transform: scaleX(1);
+            }
+        }
+
+        /* Assignments List */
+        .assignments-list {
+            height: 400px;
+            overflow-y: auto;
+            border-radius: 12px;
+            margin-top: 10px;
+            background-color: #fafafa;
+            border: 1px solid #e0e0e0;
+        }
+
+        .assignment-item {
+            padding: 18px 25px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            position: relative;
+            opacity: 0;
+            transform: translateX(-20px);
+            border-left: 4px solid transparent;
+        }
+
+        .assignment-item.ignored {
+            background-color: #f1f3f4;
+            border-left-color: #95a5a6;
+        }
+
+        .assignment-item.ignored.animated {
+            opacity: 0.8;
+        }
+
+        .assignment-item:hover {
+            background: linear-gradient(45deg, #f8f9fa, #ffffff);
+            transform: translateX(5px) scale(1.02);
+            border-left-color: #3498db;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            z-index: 1;
+        }
+
+        .assignment-item.ignored:hover {
+            background: linear-gradient(45deg, #e9ecef, #f8f9fa);
+            border-left-color: #95a5a6;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .assignment-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transform: translateX(-100%);
+        }
+
+        .assignment-item:hover::before {
+            animation: shine 1.5s;
+        }
+
+        @keyframes shine {
+            to {
+                transform: translateX(100%);
+            }
+        }
+
+        .assignment-item .status {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 15px;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.3);
+            animation: pulse-status 2s infinite;
+        }
+
+        @keyframes pulse-status {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.3);
+            }
+            50% {
+                transform: scale(1.1);
+                box-shadow: 0 0 0 8px rgba(0, 0, 0, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+            }
+        }
+
+        .status.pending {
+            background-color: #f39c12;
+            animation: pulse-pending 2s infinite;
+        }
+
+        .status.completed {
+            background-color: #2ecc71;
+            animation: pulse-completed 2s infinite;
+        }
+
+        .status.overdue {
+            background-color: #e74c3c;
+            animation: pulse-overdue 2s infinite;
+        }
+
+        .status.inactive {
+            background-color: #808080; 
+            animation: none;  
+        }
+
+        @keyframes pulse-pending {
+            0% { box-shadow: 0 0 0 0 rgba(243, 156, 18, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(243, 156, 18, 0); }
+        }
+
+        @keyframes pulse-completed {
+            0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
+        }
+
+        @keyframes pulse-overdue {
+            0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
+            50% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+        }
+
+        .assignment-item .title {
+            font-weight: 500;
+            flex-shrink: 0;
+            font-size: 1.1rem;
+            color: #2c3e50;
+            transition: color 0.3s;
+        }
+
+        .assignment-item .title.ignored {
+            color: #95a5a6;
+        }
+
+        .assignment-item .class-name-tag {
+            font-size: 0.75rem;
+            color: #3498db;
+            background-color: rgba(52, 152, 219, 0.1);
+            padding: 3px 8px;
+            border-radius: 12px;
+            margin-left: 10px;
+            font-weight: 500;
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            transition: all 0.3s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .assignment-item .class-name-tag.ignored {
+            color: #95a5a6;
+            background-color: rgba(149, 165, 166, 0.1);
+            border: 1px solid rgba(149, 165, 166, 0.3);
+        }
+
+        .assignment-item .spacer {
+            flex-grow: 1;
+        }
+
+        .assignment-item .due-date {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin-left: 15px;
+            font-weight: 500;
+            min-width: 120px;
+            text-align: right;
+            transition: all 0.3s;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .assignment-item .due-date:not(.ignored)::before {
+            content: "";
+            background-image: url('https://x19.fp.ps.netease.com/file/68bc4b6e52678dec504f56c9X0XYSNBt06');
+            background-size: 14px 14px;
+            background-repeat: no-repeat;
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            margin-right: 5px;
+        }
+        .assignment-item .due-date.ignored {
+            color: #95a5a6;
+            font-weight: 600;
+            font-style: italic;
+        }
+
+        .assignment-item .due-date.ignored::before {
+            content: '';
+        }
+
+        .assignment-item .due-date.past-due {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+
+        .assignment-item .priority {
+            font-size: 0.8rem;
+            padding: 3px 8px;
+            border-radius: 12px;
+            margin-left: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .priority.high {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .priority.medium {
+            background-color: #fff8e1;
+            color: #ff8f00;
+        }
+
+        .priority.low {
+            background-color: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .assignment-item:hover .title {
+            color: #3498db;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        .assignment-item:hover .class-name-tag {
+            background-color: rgba(52, 152, 219, 0.2);
+            border-color: rgba(52, 152, 219, 0.5);
+            transform: scale(1.05);
+        }
+
+        .assignment-item.ignored:hover .class-name-tag.ignored {
+            background-color: rgba(149, 165, 166, 0.2);
+            border-color: rgba(149, 165, 166, 0.5);
+        }
+
+        .assignment-item:hover .due-date {
+            color: #3498db;
+            transform: scale(1.05);
+        }
+
+        /* Modal/Popup styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background-color: white;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 700px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+            position: relative;
+            transform: translateY(-50px);
+            transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .modal-overlay.active .modal {
+            transform: translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #95a5a6;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+
+        .close-btn:hover {
+            background-color: #f8f9fa;
+            color: #e74c3c;
+        }
+
+        .modal-body {
+            margin-bottom: 25px;
+        }
+
+        .modal-description {
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #555;
+            margin-bottom: 20px;
+        }
+
+        .class-tag {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .state-tag {
+            display: inline-block;
+            background-color: #457ddef0;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            margin-bottom: 15px;
+        }
+
+        .date-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+        }
+
+        .date-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .date-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 3px;
+            color: #95a5a6;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex: 1;
+        }
+
+        .btn-purple {
+            background-color: #8e44ad;
+            color: white;
+        }
+
+        .btn-purple:hover {
+            background-color: #7d3c98;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(142, 68, 173, 0.3);
+        }
+
+        .btn-red {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .btn-red:hover {
+            background-color: #c0392b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        /* Sync Section */
+        .sync-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .sync-box {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            background-color: #f8f9fa;
+        }
+
+        .sync-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #3498db, #9b59b6);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.3s;
+        }
+
+        .sync-box:hover {
+            transform: translateY(-5px) scale(1.03);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            border-color: #3498db;
+        }
+
+        .sync-box:hover::before {
+            transform: scaleX(1);
+        }
+
+        .sync-box h3 {
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .sync-box p {
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            line-height: 1.5;
+        }
+
+        .sync-status {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+        }
+
+        .status-active {
+            background-color: #2ecc71;
+            animation: pulse-sync 2s infinite;
+        }
+
+        .status-inactive {
+            background-color: #95a5a6;
+        }
+
+        @keyframes pulse-sync {
+            0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(46, 204, 113, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+        }
+
+        .coming-soon {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            color: #6c757d;
+            cursor: default;
+        }
+
+        .coming-soon h3::after {
+            content: '✨';
+            margin-left: 5px;
+        }
+
+        /* Scrollbar styling */
+        .assignments-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .assignments-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .assignments-list::-webkit-scrollbar-thumb {
+            background: linear-gradient(#7f8c8d, #95a5a6);
+            border-radius: 10px;
+            border: 2px solid #f1f1f1;
+        }
+
+        .assignments-list::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(#95a5a6, #bdc3c7);
+        }
+
+        /* Animation for list items */
+        @keyframes staggerFade {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Section 1: Teams Assignment -->
+        <div class="section">
+            <div class="section-header" id="gb_teamsPanel_s1_header">
+                <h2></h2>
+                <div class="sort-controls">
+
+                    <button class="sort-btn" data-sort="due">数据同步中或任务无数据 / Syncing or Data Unavailable</button>
+                </div>
+            </div>
+            <div class="assignments-list" id="assignmentsList">
+                <!-- Assignment items will be added here via JavaScript -->
+            </div>
+        </div>
+
+        <!-- Section 2: Sync To Teams -->
+        <div class="section" id="gb_teamsPanel_s2_header">
+            <h2></h2>
+            <div class="sync-grid">
+                <div class="sync-box" id="sync-box-1">
+                    <h3 id="sync1Title"> Sync Schedule</h3>
+                    <p id="sync1Content">Last sync: Just now</p>
+                </div>
+                <div class="sync-box" id="sync-box-2">
+                    <h3 id="sync2Title">Sync Teams Assignments</h3>
+                    <p id="sync2Content">Status: Connected</p>
+                </div>
+                <div class="sync-box" id="sync-box-3">
+                    <h3 id="sync3Title">Sync Xiaobao Assignments</h3>
+                    <p id="sync3Content">Connection pending</p>
+                </div>
+                <div class="sync-box coming-soon">
+                    <h3>Coming Soon</h3>
+                    <p>New features in development</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Popup -->
+    <div class="modal-overlay" id="assignmentModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Assignment Title</h3>
+                <button class="close-btn" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <span class="state-tag" id="modalState">State</span>
+                <span class="class-tag" id="modalClass">Class Name</span>
+                
+                <p class="modal-description" id="modalDescription">Assignment description will appear here. This is where detailed information about the assignment requirements, objectives, and any additional instructions would be displayed.</p>
+                <div class="date-info">
+                    <div class="date-item">
+                        <span class="date-label" id="gc-langset-assigneddate">Assigned</span>
+                        <span id="modalAssignedDate">Nov 30, 2023</span>
+                    </div>
+                    <div class="date-item">
+                        <span class="date-label" id="gc-langset-duedate">Due Date</span>
+                        <span id="modalDueDate">Dec 15, 2023</span>
+                    </div>
+    
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-red" id="ignoreBtn"></button>
+                <button class="btn btn-purple" id="goToTeamsBtn"></button>
+                
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sample assignment data with 10 items
+        
+    </script>
+</body>
+</html>

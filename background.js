@@ -1,0 +1,3367 @@
+﻿chrome.webRequest.onCompleted.addListener(
+    (details) => {
+        const { url } = details;
+        // URL 定义
+        const LoginUrl = "https://tsinglanstudent.schoolis.cn/api/StudyAbroad/GetStudentPromotionIdByStudentId";
+        const DynamicScoreDetailUrl = "https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail";
+
+        // 判断 URL 并执行对应逻辑
+        if (url === LoginUrl) {
+            console.log("{logged in}", details);
+            InitGCalc(); // 用户登录逻辑
+            setTimeout(() => {
+                M_send_comp_msg("bp-loggedin", null, 0);
+            }, 100);
+            setTimeout(() => {
+                M_send_comp_msg("bp-loggedin-frameEdit", null, 0);
+            }, 700);
+            setTimeout(() => {
+                try {
+                    getFromChromeStorage("updateMsg").then(update => {
+                        console.log(update);
+                        if(update.length>10){
+                            M_send_str_msg("tip_update",update,0);
+                            saveToChromeStorage("updateMsg", "");
+                        }
+                        
+                    });
+                } catch (e) {}
+                M_send_comp_msg("bp-recordLogin", null, 0);
+            }, 1000);
+            
+        
+        } else if (url.startsWith(DynamicScoreDetailUrl)&&(!url.includes("gcalc"))|| url.includes("show=gbdiy")) {
+            setTimeout(() => {
+                //console.log("[Listener] Got:", url);
+                try {
+                    // 解析 URL 参数
+                    const urlParams = new URLSearchParams(new URL(url).search);
+                    const req_subjectId = urlParams.get("subjectId");
+                    const req_semesterId = urlParams.get("semesterId");
+
+                    // 构建数据对象
+                    const data = {
+                        smsId: req_semesterId,
+                        subjectId: req_subjectId
+                    };
+
+
+                    M_send_comp_msg("rc_infopage", data, 0);
+                } catch (error) {
+                    console.error("[Listener Error] Failed to process URL parameters:", error);
+                }
+            }, 10); // 延迟 10ms 执行
+        } else if (url.startsWith(DynamicScoreDetailUrl)) {
+            setTimeout(() => {
+                M_send_comp_msg("bp-observeDynamicScore",null, 0);
+
+            }, 10);
+        }
+    },
+    {
+        urls: ["<all_urls>"], // 监听所有 URL
+        types: ["xmlhttprequest"] // 包括 fetch 和 xmlhttprequest 请求
+    }
+);
+
+function tlang(chi,eng){
+    return (navigator.language || navigator.userLanguage).startsWith('zh') ? chi:eng;
+}
+
+chrome.runtime.onInstalled.addListener(function(details) {
+    if (details.reason === "update") {
+        return;//该版本无重大更新
+        let updatedMsg;
+        if(details.previousVersion === "0.61"){
+            return;
+        }
+        if(details.previousVersion === "0.60") {
+            updatedMsg = tlang(`
+                <div style="color: white; font-size: 11px;">
+      <p style="margin-bottom: 2px; margin-top: 2px;">
+        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
+        <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
+      </p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 修复了部分情况下科目加权匹配错误的问题</p>
+    </div>
+    `,`
+                <div style="color: white; font-size: 11px;">
+      <p style="margin-bottom: 2px; margin-top: 2px;">
+        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
+        <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
+      </p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· Bug Fixed: Subject Weight may incorrectly matched.</p>
+    </div>
+    
+    `)
+        }else{
+            updatedMsg = tlang(`
+                <div style="color: white; font-size: 11px;">
+      <p style="margin-bottom: 2px; margin-top: 2px;">
+        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
+        <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
+      </p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【任务预测模式】应用至GPA计算功能开放！用户可以将看到自定义任务后GPA的变动，并支持保存多门科目的编辑记录。</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【自动计算优化】优化计算逻辑，提升计算速度，并修复了无法获取到某些科目成绩的问题。</p>
+    </div>
+    `,`
+                <div style="color: white; font-size: 11px;">
+      <p style="margin-bottom: 2px; margin-top: 2px;">
+        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
+        <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
+      </p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· Task Prediction Mode for GPA Calculation is now available! Users can see how custom tasks affect their GPA and save edits for multiple subjects.</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· Automatic Calculation Optimized:Calculation logic improved, speed increased, and the issue of failing to retrieve some subject grades has been fixed.</p>
+    </div>
+    
+    `)
+        }
+        
+        saveToChromeStorage("updateMsg", updatedMsg);
+        
+    }
+    else{
+        chrome.storage.local.set({enable_state: true});
+        chrome.tabs.create({
+          url: chrome.runtime.getURL("welcome.html")
+        });
+    }
+    
+});
+
+async function saveToChromeStorage(keyName, obj) {
+    try {
+        const data = {};
+        data[keyName] = obj; // 创建存储对象
+        await chrome.storage.local.set(data); // 异步存储
+        console.log("已存入 " + keyName + " 的数据!");
+    } catch (error) {
+        console.error('Error saving to chrome.storage:', error);
+        M_send_comp_msg("calcErrorStop", null, 0);
+        M_send_comp_msg("tip_err", error, 0);
+        //err
+    }
+}
+async function getFromChromeStorage(keyName) {
+    try {
+        const result = await chrome.storage.local.get(keyName); // 异步获取
+        if (result[keyName] !== undefined) {
+            return result[keyName]; // 返回存储的值
+        } else {
+            console.warn('Key not found in chrome.storage:', keyName);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error reading from chrome.storage or parsing:', error);
+        M_send_str_msg("calcErrorStop", "1", 0);
+        M_send_str_msg("tip_err", error, 0);
+        //err
+        return null;
+    }
+}
+
+function buildLegacySubjectKey(semesterId, subjectId) {
+    return `${semesterId}|${subjectId}`;
+}
+
+function buildClassScopedSubjectKey(semesterId, subjectId, classId) {
+    if (classId === undefined || classId === null) {
+        return null;
+    }
+    return `${semesterId}|${subjectId}|${classId}`;
+}
+
+async function M_GetSettings() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('user_preference', function(data) {
+            if (data.user_preference) {
+                resolve(data.user_preference);
+            } else {
+                const homeSrc = "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN";
+                const user_preference = {
+                    calcRange: 1,
+                    homeSrc: homeSrc,
+                    autoHide: true,
+                    advLogPage: true,
+                    advScoreShadow: false,
+                    autologNtw: 0,
+                    homeSrcDark: "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN",
+                    homeDarkMode: 1,
+                    autoHide_Condition: 70
+                };
+                chrome.storage.local.set({ user_preference: user_preference });
+                resolve(user_preference);
+            }
+        });
+    });
+}
+
+async function InitGCalc() {
+
+
+    M_checkGPARules();
+    M_clearCalcedData();
+    M_clearRedirectRules();
+    M_initDeclaritiveRules();
+    let M_UserSettings = await M_GetSettings();
+    C_CalcAll(M_UserSettings);
+    M_StartMSFeatures();
+
+}
+
+async function C_CalcAll(M_UserSettings){
+    
+    const calcRange = M_UserSettings.calcRange;
+    if(calcRange===0){
+        return;
+    }
+    M_send_comp_msg("show_process",{cur: 0,oval: 1, text:tlang("获取学科信息..","Fetching Subjects"),isRefresh:false},-99999);
+    const { year, semester, ids, bgnDates, endDates } = await C_GetSemesters(calcRange);
+    
+    console.log("crange",calcRange);
+    for (let i = 0; i < calcRange; i++) {
+        if (ids[i] !== null) {
+            M_send_comp_msg("show_smsCalc_progress",null,0);
+            console.log(`[AutoCalc] Start Calc for Semester ID: ${ids[i]}`);
+            await C_CalcSms(ids[i], bgnDates[i], endDates[i], semester[i], year[i]);
+            await C_BuildDynamicScoreRule(ids[i]);
+            M_send_comp_msg("show_smsCalc_progress",null,0);
+            M_send_comp_msg("show_process",{cur: i+1,oval: calcRange, text:tlang("已完成学期计算","Finished"),isRefresh:true},-99999);
+        } else {
+            console.log("[AutoCalc] Invalid Semester ID, skipping...");
+        }
+    }
+
+    //finished Calcall
+
+    saveToChromeStorage("lastUpdate", new Date().getTime());
+
+}
+
+function M_checkGPARules(){
+    console.log("Checking GPARules");
+    getFromChromeStorage("specialWeightRules").then(result => { 
+        if (result === null) {
+            const result = [{"Pre AP": 1.0},{"ultivari":1.5}];
+            saveToChromeStorage("specialWeightRules",result);
+        } else {
+            console.log('SpecialGPARule Loaded:', result);
+        }
+    });
+    getFromChromeStorage("subjectWeightRules").then(result => {
+        if (result === null || JSON.stringify(result).length<60) {
+            const result = {
+                high: ["AP","AS","A2","A Level","ALevel","Linear Algebra"],
+                low: ["Fine Art","IT ","Electi","Drama","Chinese Painting","Architectural","Dance","Percussion","Vocal","Media","Programming","Spanish","Philosophy","Skills","Journalism","Creative"],
+                no: ["Homeroom"]
+            };
+            console.log('OriginalRule too short,Saved result:', result); // 返回结果
+            M_send_str_msg("tip_alert_rt", tlang("科目权重规则过短，已初始化默认规则","Subject weighting rules are too short, default rules have been initialized") , 0);
+            saveToChromeStorage("subjectWeightRules",result);
+            return;
+        }else{
+            console.log('GPARule Loaded:', result); // 返回结果
+        }
+    });
+    
+}
+function M_checkOutdatedScore(){
+    getFromChromeStorage("lastUpdate").then(lastUpdate => {
+        if (lastUpdate === null) {
+            return;
+        }
+        const now = new Date().getTime();
+        const diff = now - lastUpdate;
+        const diffDays = diff / (1000 * 60 * 60 * 24);
+        console.log("[checkOutdatedScore] Days since last update:", diffDays,lastUpdate,now);
+        if (diffDays > 1) {
+            M_send_str_msg("tip_alert_rt", "数据已过期，正在重新计算\nData Expired, Recalculating!" , 0);
+            InitGCalc();
+            getFromChromeStorage("MSFeatureEnabled").then(MSFeatureEnabled => {
+                if (MSFeatureEnabled) {
+                    T_fetchTeamsUserClassesAndAssignments();
+                }
+            });
+        }
+    });
+}
+
+
+async function C_GetSemesters(calcRange) {
+    const response = await fetch("https://tsinglanstudent.schoolis.cn/api/School/GetSchoolSemesters");
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    let startPos = data.data.findIndex(item => item.isNow === true);
+
+    const semesters = data.data.slice(startPos, startPos + calcRange);
+    const year = semesters.map(item => item.year);
+    const semester = semesters.map(item => item.semester);
+    const ids = semesters.map(item => item.id);
+    const bgnDates = semesters.map(item => item.startDate);
+    const endDates = semesters.map(item => item.endDate);
+
+    return { year, semester, ids, bgnDates, endDates };
+}
+
+
+async function C_CalcSms(semesterId,bgn_info,end_info,semesterType,year) {
+    setTimeout(() => {
+        M_send_comp_msg("show_smsCalc_progress",null,0);
+    }, 1000);
+    
+    console.log("f(CalcBySmsId):", semesterId, bgn_info, end_info, semesterType);
+
+    // 构建请求 URL
+    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetStuSubjectListForSelect?semesterId=${semesterId}`;
+
+    try {
+        // 发送请求并解析响应
+        const response = await fetch(url);
+        const data = await response.json();
+
+        // 如果数据存在且有效，处理科目信息
+        if (data?.data?.length > 0) {
+            let subjectIdList = {};
+            const subjectKeyCounter = {};
+
+            // 遍历科目列表，提取并映射数据
+            for (const subject of data.data) {
+                const normalizedName = subject.name === "HS History" ? "Chinese History" : subject.name; // 24-25学年特判
+                const nextIndex = (subjectKeyCounter[normalizedName] || 0) + 1;
+                subjectKeyCounter[normalizedName] = nextIndex;
+                const subjectKey = nextIndex === 1 ? normalizedName : `${normalizedName}#${nextIndex}`;
+                subjectIdList[subjectKey] = {
+                    subjectName: normalizedName,
+                    className: "noData",
+                    subjectId: subject.id,
+                    classId: -1,
+                    subjectCode: subject.subjectCode,
+                    maxCom: -1
+                };
+            }
+            console.log("[CalcBySmsId] 开始填充学科数据:", semesterId, subjectIdList);
+                //更新环
+            // 填充学科数据
+            
+            subjectIdList = await C_fillInClassId_V3(subjectIdList,semesterId,bgn_info,end_info);
+            //subjectIdList = await C_fillInClassId(subjectIdList, semesterType, year, "fixed");
+            //subjectIdList = await C_fillInClassId(subjectIdList, semesterType, year, "recent");
+            M_send_comp_msg("show_smsCalc_progress",null,0);
+            //subjectIdList = await C_fillInClassId_StartMethod2(subjectIdList, semesterType, year, bgn_info, end_info,semesterId);
+                //更新环
+            console.log("[CalcBySmsId] 学科数据已填充完毕:", semesterId, subjectIdList);
+            // 初始化 V2 计算
+            await C_init_V2Calc(subjectIdList, semesterId, bgn_info, end_info, semesterType, year);
+
+            M_send_comp_msg("show_smsCalc_progress",null,0);
+            // 执行原始请求逻辑
+            await C_fetchOriginalRequest(semesterId);
+                //更新环
+            
+        }
+
+        return true; // 成功处理
+    } catch (error) {
+        console.error("[CalcBySmsId] Error:", error);
+        console.error("[CalcBySmsId] Error: V2CalcMethodError!!", error);
+        return false; // 处理失败
+    }
+}
+
+function dateConvert(csharpDateString) {
+    const regex = /\/Date\((\d+)([-+]\d+)\)\//;
+    const match = csharpDateString.match(regex);
+  
+    if (match) {
+      const timestamp = parseInt(match[1], 10);
+  
+      const date = new Date(timestamp);
+  
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0'); 
+      const day = String(date.getDate()).padStart(2, '0');
+  
+      return `${year}-${month}-${day}`;
+    } else {
+      return "2000-01-01";
+    }
+  }
+
+function C_ShortenDataBeforeFill(data) {
+    const uniqueData = [];
+    const seen = new Set(); // 用于跟踪已见过的 classInfo
+
+    for (const item of data) {
+        const classInfoKey = JSON.stringify(item.classInfo); // 将 classInfo 转换为字符串
+
+        if (!seen.has(classInfoKey)) { // 如果 classInfo 是新的
+            uniqueData.push(item); // 添加到 uniqueData 数组
+            seen.add(classInfoKey); // 标记为已见过
+        }
+    }
+    console.log("Shorten", data,uniqueData);
+    return uniqueData;
+}
+
+function C_v3Calc_simplifyAssignments(jsonData) {
+    const assignmentsByCourse = {};
+    jsonData.data.list.forEach(assignment => {
+      if (!assignmentsByCourse[assignment.subjectName]) {
+        assignmentsByCourse[assignment.subjectName] = assignment;
+      }
+    });
+    jsonData.data.list = Object.values(assignmentsByCourse);
+    return jsonData.data.list;
+  }
+
+async function C_v3Calc_matchClassIdUsingAssignmentId(subjectIdList, assignmentId) {
+    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${assignmentId}&gcalcSysFetch`;
+
+    try {
+        const response = await fetch(url);
+        if (response.ok) {
+            const data = await response.json();
+            if (data?.data?.subjectId) {
+                for (const subjectName in subjectIdList) {
+                    if (subjectIdList.hasOwnProperty(subjectName)) {
+                        const subjectEntry = subjectIdList[subjectName];
+                        if (subjectEntry.subjectId === data.data.subjectId && subjectEntry.classId === -1) {
+                            subjectEntry.classId = data.data.classId;
+                            subjectEntry.className = subjectName+"#"+data.data.subjectId;//v3计算无法获取className，懒得改了，拿subejctcode替代
+                            console.log("[C_v3Calc_matchClassIdUsingAssignmentId] Updated:", subjectEntry.subjectName, subjectEntry.classId);
+                            return subjectIdList;
+                        }
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error("[C_v3Calc_matchClassIdUsingAssignmentId] Error:", error);
+    }
+    console.log("[C_v3Calc_matchClassIdUsingAssignmentId] Not Found:", assignmentId);
+    return subjectIdList;
+}
+async function C_fillInClassId_V3(subjectIdList, smsId, bgn_info, end_info) {
+    const bgn_parsed = dateConvert(bgn_info);
+    const end_parsed = dateConvert(end_info);
+    let bgn_year = bgn_parsed.year;
+    let bgn_mon = bgn_parsed.mon;
+    let bgn_date = bgn_parsed.date;
+
+    let end_year = end_parsed.year;
+    let end_mon = end_parsed.mon;
+    let end_date = end_parsed.date;
+    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${smsId}&subjectId=null&typeId=null&key=&beginTime=${bgn_year}-${bgn_mon}-${bgn_date}&endTime=${end_year}-${end_mon}-${end_date}&mode=null&pageIndex=1&pageSize=500`;
+
+    console.log("[fillInClassIdV3] V3方法开始填充学科数据:", url);
+    // 构建请求数据
+
+    try {
+        // 发起 POST 请求
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            let ServerClassList = C_v3Calc_simplifyAssignments(result);
+            console.log("[fillInClassIdV3] V3方法获取到服务器数据:", ServerClassList);
+            for(const assignment of ServerClassList){
+                subjectIdList = await C_v3Calc_matchClassIdUsingAssignmentId(subjectIdList,assignment.id);
+            }
+            console.log("[fillInClassIdV3] V3方法填充完毕:", subjectIdList);
+            return subjectIdList; // 返回更新后的 subjectIdList
+        } else {
+            console.error("[fillInClassIdV3] Error:", response.status, response.statusText);
+            return subjectIdList; 
+        }
+    } catch (error) {
+        console.error("[fillInClassIdV3] Error:", error);
+        return subjectIdList; 
+    }
+}
+
+async function C_fillInClassId_StartMethod2(subjectIdList, semesterType, year, bgndate, enddate, smsId) {
+    // 日期转换辅助函数
+    function jsDateToCSharpString(date) {
+        const timestamp = date.getTime();
+        const timezoneOffset = date.getTimezoneOffset();
+        const absoluteOffset = Math.abs(timezoneOffset);
+        const hours = Math.floor(absoluteOffset / 60).toString().padStart(2, '0');
+        const minutes = (absoluteOffset % 60).toString().padStart(2, '0');
+        const sign = timezoneOffset <= 0 ? '+' : '-';
+        return `\/Date(${timestamp}${sign}${hours}${minutes})\/`;
+    }
+
+    // 生成日期范围数组
+    function generateDateRanges(startDate, endDate) {
+        const ranges = [];
+        let currentStart = new Date(startDate);
+        const end = new Date(endDate);
+        
+        while (currentStart < end) {
+            const currentEnd = new Date(currentStart.getFullYear(), currentStart.getMonth() + 1, currentStart.getDate());
+            const adjustedEnd = currentEnd > end ? end : currentEnd;
+            
+            ranges.push({
+                start: new Date(currentStart),
+                end: new Date(adjustedEnd)
+            });
+            
+            currentStart = adjustedEnd;
+        }
+        return ranges;
+    }
+
+    // 主逻辑
+    const startDate = new Date(dateConvert(bgndate));
+    const endDate = new Date(dateConvert(enddate));
+    const dateRanges = generateDateRanges(startDate, endDate);
+
+    // 并行请求
+    const requests = dateRanges.map(range => {
+        const newBgndate = jsDateToCSharpString(range.start);
+        const newEnddate = jsDateToCSharpString(range.end);
+        // 深拷贝避免数据污染
+        const copiedList = JSON.parse(JSON.stringify(subjectIdList));
+        return C_fillInClassId_Method2(copiedList, semesterType, year, newBgndate, newEnddate, smsId);
+    });
+
+    const results = await Promise.all(requests);
+
+    return mergeObjects(results);
+}
+
+function mergeObjects(result) {
+    const mergedobject = {};
+    for (const fetchResult of result) {
+      for (const subjectName in fetchResult) {
+        mergedobject[subjectName] = fetchResult[subjectName];
+      }
+    }
+    return mergedobject;
+}
+async function C_fillInClassId_Method2(subjectIdList, semesterType, year, bgndate, enddate, smsId) {
+    const url = 'https://tsinglanstudent.schoolis.cn/api/Schedule/ListScheduleByParent';
+
+    // 构建请求数据
+    const data = {
+        beginTime: dateConvert(bgndate),
+        endTime: dateConvert(enddate)
+    };
+
+    try {
+        // 发起 POST 请求
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            let classList = result?.data || []; // 确保 classList 为有效数组
+
+            classList = C_ShortenDataBeforeFill(classList);
+
+            for (const classInfo of classList) {
+                const subjectEntry = subjectIdList[classInfo.name];
+
+                if (subjectEntry) {
+                    if (1) {
+              //          console.log(`[fillInClassId] Success: ${classInfo.name}, With: ${classInfo.classInfo.id}`);
+                        subjectEntry.classId = classInfo.classInfo.id; // 更新 classId
+                        subjectEntry.className = classInfo.classInfo.className;
+                        subjectEntry.maxCom = 9999;
+                        //console.log("[!SubjectEntryFill]Updated:", subjectEntry.subjectName, subjectEntry.classId, subjectEntry.maxCom);
+                    }
+                } else {
+                    // 遍历 subjectIdList 进行模糊匹配
+                    let matched = false;
+                    for (const subjectKey in subjectIdList) {
+                        if (subjectIdList.hasOwnProperty(subjectKey)) {
+                            const currentSubject = subjectIdList[subjectKey];
+                            const maxCommonLen = Logic_getMaxCommonConsecutiveLength(classInfo.name, currentSubject.subjectName);   
+
+                            if (maxCommonLen > 18 || maxCommonLen >= (currentSubject.subjectName.length-1)) { // 完全匹配
+                               // console.log(`[fillInClassId] Match Found: ${classInfo.name} 与 ${currentSubject.subjectName} (连续匹配长度: ${maxCommonLen})`);
+                                currentSubject.classId = classInfo.classInfo.id;
+                                currentSubject.className = classInfo.classInfo.className;
+                                matched = true;
+                                break;
+                            } else if (maxCommonLen > 12) { // 普通匹配
+                                if(currentSubject.maxCom < maxCommonLen){
+                                    // console.log(`[fillInClassId] Match Found: ${classInfo.name} 与 ${currentSubject.subjectName} (连续匹配长度: ${maxCommonLen})`);
+                                    console.log("[FillId]Original:", currentSubject.subjectName, currentSubject.classId, currentSubject.maxCom);
+                                    currentSubject.classId = classInfo.classInfo.id;
+                                    currentSubject.className = classInfo.classInfo.className;
+                                    currentSubject.maxCom = maxCommonLen;
+                                    console.log("[FillId]Updated:", currentSubject.subjectName, currentSubject.classId, currentSubject.maxCom);
+                                }
+                             }
+                        }
+                    }
+
+                    if (!matched) {
+                       // console.warn(`[fillInClassId] No sufficient match found for: ${classInfo.name}`);
+                    }
+                }
+            }
+            console.log("[fillInClassId] 填充完毕:", subjectIdList);
+            return subjectIdList; // 返回更新后的 subjectIdList
+        } else {
+            return subjectIdList; // 即使失败，返回原始数据
+        }
+    } catch (error) {
+    
+        return subjectIdList; // 异常情况，返回原始数据
+    }
+}
+
+
+
+async function C_fillInClassId(subjectIdList, semesterType, year, mode) {
+    const url = 'https://tsinglanstudent.schoolis.cn/api/Schedule/ListScheduleByParent';
+
+    let data;   
+    // 构建请求数据
+    if (mode === "fixed") {
+        data = {
+          beginTime: semesterType === "1" ? `${year}-12-01` : `${year + 1}-04-01`,
+          endTime: semesterType === "1" ? `${year}-12-30` : `${year + 1}-05-01`
+        };
+      } else {
+        const today = new Date();
+        const fifteenDaysAgo = new Date();
+        fifteenDaysAgo.setDate(today.getDate() - 15);
+        const fifteenDaysLater = new Date();
+        fifteenDaysLater.setDate(today.getDate() + 15);
+      
+        const formatDate = (date) => {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        };
+      
+        data = {
+          beginTime: formatDate(fifteenDaysAgo),
+          endTime: formatDate(fifteenDaysLater)
+        };
+      }
+    
+
+    try {
+        // 发起 POST 请求
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        let nofoundList ="";
+
+        if (response.ok) {
+            const result = await response.json();
+            let classList = result?.data || []; // 确保 classList 为有效数组
+
+            classList = C_ShortenDataBeforeFill(classList);
+
+            for (const classInfo of classList) {
+                const subjectEntry = subjectIdList[classInfo.name];
+
+                if (subjectEntry) {
+                    if (1) {
+              //          console.log(`[fillInClassId] Success: ${classInfo.name}, With: ${classInfo.classInfo.id}`);
+                        subjectEntry.classId = classInfo.classInfo.id; // 更新 classId
+                        subjectEntry.className = classInfo.classInfo.className;
+                        subjectEntry.maxCom = 9999;
+                       // console.log("[!SubjectEntryFill]Updated:", subjectEntry.subjectName, subjectEntry.classId, subjectEntry.maxCom);
+                    }
+                } else {
+                    // 遍历 subjectIdList 进行模糊匹配
+                    let matched = false;
+                    for (const subjectKey in subjectIdList) {
+                        if (subjectIdList.hasOwnProperty(subjectKey)) {
+                            const currentSubject = subjectIdList[subjectKey];
+                            const maxCommonLen = Logic_getMaxCommonConsecutiveLength(classInfo.name, currentSubject.subjectName);   
+
+                            if (maxCommonLen > 18 || maxCommonLen >= (currentSubject.subjectName.length-1)) { // 完全匹配
+                               // console.log(`[fillInClassId] Match Found: ${classInfo.name} 与 ${currentSubject.subjectName} (连续匹配长度: ${maxCommonLen})`);
+                                currentSubject.classId = classInfo.classInfo.id;
+                                currentSubject.className = classInfo.classInfo.className;
+                                matched = true;
+                                break;
+                            } else if (maxCommonLen > 12) { // 普通匹配
+                                if(currentSubject.maxCom < maxCommonLen){
+                                    // console.log(`[fillInClassId] Match Found: ${classInfo.name} 与 ${currentSubject.subjectName} (连续匹配长度: ${maxCommonLen})`);
+                                    console.log("[FillId]Original:", currentSubject.subjectName, currentSubject.classId, currentSubject.maxCom);
+                                    currentSubject.classId = classInfo.classInfo.id;
+                                    currentSubject.className = classInfo.classInfo.className;
+                                    currentSubject.maxCom = maxCommonLen;
+                                    console.log("[FillId]Updated:", currentSubject.subjectName, currentSubject.classId, currentSubject.maxCom);
+                                }
+                             }
+                        }
+                    }
+
+                    if (!matched) {
+                       // console.warn(`[fillInClassId] No sufficient match found for: ${classInfo.name}`);
+                    }
+                }
+            }
+            console.log("[fillInClassId] 填充完毕:", subjectIdList);
+            return subjectIdList; // 返回更新后的 subjectIdList
+        } else {
+            return subjectIdList; // 即使失败，返回原始数据
+        }
+    } catch (error) {
+    
+        return subjectIdList; // 异常情况，返回原始数据
+    }
+}
+
+function Logic_getMaxCommonConsecutiveLength(str1, str2) {
+    str1 = str1.toLowerCase();
+    str2 = str2.toLowerCase();
+    const m = str1.length;
+    const n = str2.length;
+    let maxLen = 0;
+    let prev = Array(n + 1).fill(0);
+    let current = Array(n + 1).fill(0);
+    
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            if (str1[i - 1] === str2[j - 1]) {
+                current[j] = prev[j - 1] + 1;
+                if (current[j] > maxLen) {
+                    maxLen = current[j];
+                }
+            } else {
+                current[j] = 0;
+            }
+        }
+        [prev, current] = [current, prev];
+    }
+    
+    return maxLen;
+}
+
+function formatNumber(number, decimalPlaces) {
+    const formatted = Number(parseFloat(number.toFixed(decimalPlaces)));
+    return String(formatted);
+}
+
+async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterType, year) {
+    const subjectData = []; // 存储每个科目的数据
+    let specialWeightRules = await getFromChromeStorage("specialWeightRules")
+    let weightRules = await getFromChromeStorage("subjectWeightRules")
+
+    let subjectSequence = 1;
+    // 遍历每个科目
+    for (const subject of Object.values(idList)) {
+        console.log("sub",subject)
+        M_send_comp_msg("show_process",{cur: subjectSequence,oval: Object.keys(idList).length, text:subject.subjectName, isRefresh:false},-99999);   
+        subjectSequence++;
+        const { classId, subjectId, subjectName, className, subjectCode } = subject;
+        if(classId === -1){
+            continue;
+        }
+        // 拼接请求 URL
+        const url = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
+
+        try {
+            // 发起 GET 请求
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (response.ok) {
+
+                let isV1 = false;
+                let data = await response.json();
+                console.log(`[init_V2Calc] Fetched data for subjectId: ${subjectId}`, data);
+
+                if(data.data === null || data.state!= 0 ){
+                    console.warn(`[V2Calc]Failed to fetch data,returning to V1`)
+                    console.log(semesterId,subjectId,convertToMSDate(bgn_info).split('T')[0],convertToMSDate(end_info).split('T')[0]);
+                    formed = await getSubjectGrades(semesterId,subjectId,convertToMSDate(bgn_info).split('T')[0],convertToMSDate(end_info).split('T')[0],classId);
+                    console.log("V1Calc.Formed",formed)
+                    data = formed.gradeDetails;
+                    isV1 = true;
+                }
+                let subjectScore = 0;
+                let subjectTotalProp = 0;
+
+                let flag_AllNull = true;
+                // 计算成绩加权平均分
+                for (const section of data.data.evaluationProjectList) {
+                    if (!(section.learningTaskAndExamList.length === 0 || 
+                        (section.learningTaskAndExamList.length === 1 && section.learningTaskAndExamList[0].score === null))) {
+                            if(section.score <= 0 ){
+                                for(const item of section.learningTaskAndExamList){
+                                    if(item.score != null){
+                                        flag_AllNull = false;
+                                        subjectScore += (section.score * section.proportion);
+                                        subjectTotalProp += section.proportion;
+                                        break;
+                                    }
+                                }
+                            }else{
+                                flag_AllNull = false;
+                                subjectScore += (section.score * section.proportion);
+                                subjectTotalProp += section.proportion;
+                            }
+                            
+                    }
+                }
+
+                if(flag_AllNull){
+                    continue;
+                    //All null, skip
+                }
+                subjectScore = (subjectScore / subjectTotalProp);
+
+
+
+                subjectScore = formatNumber(subjectScore,1);
+
+                // 构建课程信息对象
+                const subjectInfo = {
+                    ename: subjectName,
+                    subjectCode: subjectCode,
+                    semesterId: semesterId,
+                    subjectId: subjectId
+                };
+                let finalWeight = (NameInList(subjectName,weightRules.high )) ? 1.5  : 1;
+                console.log("WeightCheck",subjectName,finalWeight);
+                if (subjectName) {
+
+                    for (const rule of specialWeightRules) {
+                        console.log("SpecialWeightCheck",subjectName,rule);
+                        const ruleName = Object.keys(rule)[0];
+
+                        if (subjectName.includes(ruleName)&&ruleName.length>=2) {
+                            finalWeight = rule[ruleName];
+                            console.log("SpecialWeightApplied",subjectName,finalWeight);
+                            break;
+                        }
+                    }
+                }
+                console.log(`[init_V2Calc] Calculated subjectScore for subjectId: ${subjectId} is ${subjectScore} with weight ${finalWeight}`);
+            
+                const course = {
+                    className: className,
+                    subjectId: subjectId,
+                    scoreMappingId: finalWeight==1.5 ? 801016  : 601016,
+                    classEName: className,
+                    smsId: semesterId,
+                    subjectInfo: subjectInfo,
+                    classId: classId,
+                    subjectName: subjectName,
+                    subjectEName: subjectName,
+                    subjectScore: subjectScore,
+                    updateDate: isV1?"/Date(1224172800000+0800)/":"/Date(1224086400000+0800)/",
+                    isInGrade: true,
+                    classType: 2,
+                    isOriginal: true,
+                    source: isV1?"v1calc":"v2calc"
+                };
+
+                // 异步保存数据到 chrome.storage.local
+                const legacyStorageKey = buildLegacySubjectKey(semesterId, subjectId);
+                const classScopedKey = buildClassScopedSubjectKey(semesterId, subjectId, classId);
+
+                if (classScopedKey) {
+                    await chrome.storage.local.remove(classScopedKey);
+                    await saveToChromeStorage(classScopedKey, course);
+                }
+
+                await chrome.storage.local.remove(legacyStorageKey);
+                await saveToChromeStorage(legacyStorageKey, course);
+
+                // 将获取到的数据放入 subjectData
+                subjectData.push({
+                    subjectId: subjectId,
+                    classId: classId,
+                    data: data
+                });
+            } else {
+                console.warn(`[init_V2Calc]BadResponce, Skipping: ${subjectId}, status: ${response}, url: ${url}`);
+                continue;
+                //console.error(`[init_V2Calc] Network response was not ok for subjectId: ${subjectId}, status: ${response}, url: ${url}`);
+                //M_send_str_msg("tip_err",error, 0);
+                //faceErrorWhileCalc = true;
+                //M_send_comp_msg("calcErrorStop", null, 0);
+            }
+        } catch (error) {
+            console.warn(`[init_V2Calc]BadResponce, Skipping: `);
+            continue;
+            console.error('[init_V2Calc] There has been a problem with your fetch operation:', error);
+            M_send_str_msg("tip_err",error, 0);
+            faceErrorWhileCalc = true;
+            M_send_comp_msg("calcErrorStop", null, 0);
+        }
+    }
+
+    // 返回最终的 subjectData
+    return subjectData;
+}
+
+async function C_fetchOriginalRequest(smsId) {
+    isFetchOriginal = true;
+
+    // 如果 smsId 无效，直接返回
+    if (!smsId) {
+        console.warn("[fetchOriginalRequest] Invalid semester ID.");
+        return;
+    }
+
+    const urlPattern = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetStuSemesterDynamicScore?semesterId=${smsId}&gcalc=noRedirect`;
+
+    try {
+        // 发起请求并解析响应
+        const response = await fetch(urlPattern);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const originalCourseInfoList = data?.data?.studentSemesterDynamicScoreBasicDtos || [];
+        console.log("OriginalData:", originalCourseInfoList);
+
+        isFetchOriginal = false;
+
+        for (const courseInfo of originalCourseInfoList) {
+            const subjectInfo = await C_fetchSubjectEName(smsId, courseInfo.subjectId);
+
+            const course = {
+                className: courseInfo.className,
+                subjectId: courseInfo.subjectId,
+                scoreMappingId: courseInfo.scoreMappingId,
+                classEName: courseInfo.classEName,
+                smsId: smsId,
+                subjectInfo: subjectInfo,
+                classId: courseInfo.classId,
+                subjectName: courseInfo.subjectName,
+                subjectEName: courseInfo.subjectEName,
+                subjectScore: courseInfo.subjectScore,
+                updateDate: courseInfo.updateDate,
+                isInGrade: courseInfo.isInGrade,
+                classType: courseInfo.classType,
+                isOriginal: true,
+                source: "original"
+            };
+
+            const legacyStorageKey = buildLegacySubjectKey(smsId, courseInfo.subjectId);
+            const classScopedKey = buildClassScopedSubjectKey(smsId, courseInfo.subjectId, courseInfo.classId);
+
+            if (classScopedKey) {
+                await chrome.storage.local.remove(classScopedKey);
+                await saveToChromeStorage(classScopedKey, course);
+            }
+
+            await chrome.storage.local.remove(legacyStorageKey);
+            await saveToChromeStorage(legacyStorageKey, course);
+        }
+    } catch (error) {
+        console.error('[fetchOriginalRequest] Error fetching subject data:', error);
+        M_send_str_msg("tip_err",`计算 ${smsId} 学期时出现问题: ${error}`, 0);
+        faceErrorWhileCalc = true;
+        M_send_comp_msg("calcErrorStop", null, 0);
+        return false;
+    }
+
+    return true;
+}
+
+function M_send_str_msg(msgtype, dataa,non){
+    M_send_comp_msg(msgtype, {cont:dataa}, 0);
+}
+
+async function C_fetchSubjectEName(semesterId, subjectId) {
+    if (!semesterId || !subjectId) {
+        console.warn("[fetchSubjectEName] Invalid semesterId or subjectId.");
+        return null;
+    }
+
+    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetStuSubjectListForStatisticsSelect?semesterId=${semesterId}`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const subjectData = data?.data?.find(subject => subject.id === subjectId);
+
+        if (subjectData) {
+            return {
+                ename: subjectData.eName,
+                subjectCode: subjectData.subjectCode,
+                semesterId,
+                subjectId
+            };
+        } else {
+            console.warn(`[fetchSubjectEName] Subject with ID ${subjectId} not found.`);
+        }
+
+        return null;
+    } catch (error) {
+        console.error('[fetchSubjectEName] Error fetching subject eName:', error);
+        return null;
+    }
+}
+
+
+
+async function ShowChromeStorage() {
+    const items = await new Promise((resolve) => {
+        chrome.storage.local.get(null, (result) => {
+            resolve(result);
+        });
+    });
+
+    console.log("Current chrome.storage.local content:");
+    for (const [key, value] of Object.entries(items)) {
+        console.log(`[Key]: ${key}, [Value]:`, value);
+    }
+}
+
+
+
+async function C_BuildDynamicScoreRule(semesterId) {
+    //This function also Calculates the GPA
+    let gpalist =  [];
+
+    if (!semesterId) {
+        console.error("[C_BuildDynamicScoreRule] Invalid semester ID.");
+        return;
+    }
+     
+    const mappingRules = await C_FetchMappingRules(semesterId);
+    // 初始化 JSON 数据模板
+    const jsonResponse = {
+        data: {
+            studentSemesterDynamicScoreBasicDtos: [],
+            scoreMappingList: []
+        },
+        msgCN: null,
+        msgEN: null,
+        state: 0,
+        msg: null
+    };
+
+    if (Array.isArray(mappingRules)) {
+        jsonResponse.data.scoreMappingList = [...mappingRules]; 
+    } else {
+        console.warn("[C_BuildDynamicScoreRule] mappingRules is Empty");
+        jsonResponse.data.scoreMappingList = []; 
+    }
+
+    const gcalcMapping_apWeight={ "scoresMappingId": 801016, "isUseGpa": true, "scoreMappingConfigs": [ { "displayName": "A+", "minValue": 97, "maxValue": 9999.9, "isContainMin": true, "isContainMax": true, "sort": 0, "gpa": 4.8 }, { "displayName": "A", "minValue": 93, "maxValue": 96.9, "isContainMin": true, "isContainMax": true, "sort": 1, "gpa": 4.5 }, { "displayName": "A-", "minValue": 90, "maxValue": 92.9, "isContainMin": true, "isContainMax": true, "sort": 2, "gpa": 4.2 }, { "displayName": "B+", "minValue": 87, "maxValue": 89.9, "isContainMin": true, "isContainMax": true, "sort": 3, "gpa": 3.8 }, { "displayName": "B", "minValue": 83, "maxValue": 86.9, "isContainMin": true, "isContainMax": true, "sort": 4, "gpa": 3.5 }, { "displayName": "B-", "minValue": 80, "maxValue": 82.9, "isContainMin": true, "isContainMax": true, "sort": 5, "gpa": 3.2 }, { "displayName": "C+", "minValue": 77, "maxValue": 79.9, "isContainMin": true, "isContainMax": true, "sort": 6, "gpa": 2.8 }, { "displayName": "C", "minValue": 73, "maxValue": 76.9, "isContainMin": true, "isContainMax": true, "sort": 7, "gpa": 2.5 }, { "displayName": "C-", "minValue": 70, "maxValue": 72.9, "isContainMin": true, "isContainMax": true, "sort": 8, "gpa": 2.2 }, { "displayName": "D+", "minValue": 67, "maxValue": 69.9, "isContainMin": true, "isContainMax": true, "sort": 9, "gpa": 1.8 }, { "displayName": "D", "minValue": 63, "maxValue": 66.9, "isContainMin": true, "isContainMax": true, "sort": 10, "gpa": 1.5 }, { "displayName": "D-", "minValue": 60, "maxValue": 62.9, "isContainMin": true, "isContainMax": true, "sort": 11, "gpa": 1.2 }, { "displayName": "F", "minValue": 0, "maxValue": 59.9, "isContainMin": true, "isContainMax": true, "sort": 12, "gpa": 0 } ] };
+    const gcalcMapping_noWeight={ "scoresMappingId": 601016, "isUseGpa": true, "scoreMappingConfigs": [ { "displayName": "A+", "minValue": 97, "maxValue": 9999.9, "isContainMin": true, "isContainMax": true, "sort": 0, "gpa": 4.3 }, { "displayName": "A", "minValue": 93, "maxValue": 96.9, "isContainMin": true, "isContainMax": true, "sort": 1, "gpa": 4 }, { "displayName": "A-", "minValue": 90, "maxValue": 92.9, "isContainMin": true, "isContainMax": true, "sort": 2, "gpa": 3.7 }, { "displayName": "B+", "minValue": 87, "maxValue": 89.9, "isContainMin": true, "isContainMax": true, "sort": 3, "gpa": 3.3 }, { "displayName": "B", "minValue": 83, "maxValue": 86.9, "isContainMin": true, "isContainMax": true, "sort": 4, "gpa": 3 }, { "displayName": "B-", "minValue": 80, "maxValue": 82.9, "isContainMin": true, "isContainMax": true, "sort": 5, "gpa": 2.7 }, { "displayName": "C+", "minValue": 77, "maxValue": 79.9, "isContainMin": true, "isContainMax": true, "sort": 6, "gpa": 2.3 }, { "displayName": "C", "minValue": 73, "maxValue": 76.9, "isContainMin": true, "isContainMax": true, "sort": 7, "gpa": 2 }, { "displayName": "C-", "minValue": 70, "maxValue": 72.9, "isContainMin": true, "isContainMax": true, "sort": 8, "gpa": 1.7 }, { "displayName": "D+", "minValue": 67, "maxValue": 69.9, "isContainMin": true, "isContainMax": true, "sort": 9, "gpa": 1.3 }, { "displayName": "D", "minValue": 63, "maxValue": 66.9, "isContainMin": true, "isContainMax": true, "sort": 10, "gpa": 1 }, { "displayName": "D-", "minValue": 60, "maxValue": 62.9, "isContainMin": true, "isContainMax": true, "sort": 11, "gpa": 0.7 }, { "displayName": "F", "minValue": 0, "maxValue": 59.9, "isContainMin": true, "isContainMax": true, "sort": 12, "gpa": 0 } ] };
+    
+    jsonResponse.data.scoreMappingList.push(gcalcMapping_apWeight);
+    jsonResponse.data.scoreMappingList.push(gcalcMapping_noWeight);
+
+    try {
+        // 遍历 chrome.storage.local 获取所有数据
+        const allStorageData = await new Promise((resolve) => {
+            chrome.storage.local.get(null, (items) => resolve(items));
+        });
+
+        // 筛选和映射数据到 JSON
+        const classScopedCourseKeys = [];
+        const legacyCourseKeys = [];
+
+        Object.keys(allStorageData).forEach((key) => {
+            const parts = key.split('|');
+            if (parts.length < 2) {
+                return;
+            }
+
+            const [storedSemesterId, subjectIdPart, classIdPart] = parts;
+            if (storedSemesterId !== String(semesterId)) {
+                return;
+            }
+
+            const subjectIdIsNumber = subjectIdPart !== undefined && subjectIdPart !== '' && !Number.isNaN(Number(subjectIdPart));
+            if (!subjectIdIsNumber) {
+                return;
+            }
+
+            const classIdIsNumber = classIdPart !== undefined && classIdPart !== '' && !Number.isNaN(Number(classIdPart));
+            if (classIdIsNumber) {
+                classScopedCourseKeys.push(key);
+            } else if (parts.length === 2) {
+                legacyCourseKeys.push(key);
+            }
+        });
+
+        const keysToUse = classScopedCourseKeys.length > 0 ? classScopedCourseKeys : legacyCourseKeys;
+
+        keysToUse.forEach((key) => {
+            const courseData = allStorageData[key];
+            if (!courseData || courseData.subjectId === undefined) {
+                return;
+            }
+
+            gpalist.push({
+                subjectName: courseData?.subjectEName ?? '',
+                subjectScore: courseData?.subjectScore ?? null
+            });
+
+            const className = courseData?.className ?? '';
+            const classEName = courseData?.classEName ?? '';
+            const subjectName = courseData?.subjectName ?? '';
+            const subjectEName = courseData?.subjectEName ?? '';
+
+            const dto = {
+                grade: null,
+                classType: courseData?.classType ?? null,
+                classId: courseData?.classId ?? null,
+                className: className.length > 30 ? className.substring(0, 28) + '..' : className,
+                classEName: classEName.length > 30 ? classEName.substring(0, 28) + '..' : classEName,
+                subjectId: courseData?.subjectId ?? null,
+                subjectName: subjectName.length > 26 ? subjectName.substring(0, 24) + '..' : subjectName,
+                subjectEName: subjectEName.length > 26 ? subjectEName.substring(0, 24) + '..' : subjectEName,
+                isInGrade: courseData?.isInGrade ?? null,
+                subjectScore: courseData?.subjectScore ?? null,
+                scoreMappingId: courseData?.scoreMappingId ?? null,
+                updateDate: courseData?.updateDate ?? null,
+                subjectTotalScore: 100,
+                scoreType: 1,
+                levelString: ""
+            };
+            
+            jsonResponse.data.studentSemesterDynamicScoreBasicDtos.push(dto);
+        });
+        saveToChromeStorage(`${semesterId}|SubjectPerformanceList`, jsonResponse);
+        saveToChromeStorage(`${semesterId}|GPAList`, gpalist);
+        await C_CalcGPAForSemester(semesterId,gpalist,"calced");
+        // 转换 JSON 数据为 data URL
+        const jsonDataUrl = `data:application/json,${encodeURIComponent(JSON.stringify(jsonResponse))}`;
+
+        //console.log("[C_BuildDynamicScoreRule] JSON data URL:", jsonDataUrl);
+        // 创建规则
+        chrome.declarativeNetRequest.updateDynamicRules(
+            {
+                addRules: [
+                    {
+                        id: semesterId, 
+                        priority: 1,
+                        action: {
+                            type: "redirect",
+                            redirect: {
+                                url: jsonDataUrl
+                            }
+                        },
+                        condition: {
+                            regexFilter: `https://tsinglanstudent\\.schoolis\\.cn/api/DynamicScore/GetStuSemesterDynamicScore\\?semesterId=${semesterId}`,
+                            resourceTypes: ["xmlhttprequest"]
+                        }
+                    }
+                ],
+                removeRuleIds: [semesterId] // 移除已有的规则
+            },
+            () => {
+                //console.log("[C_BuildDynamicScoreRule] Rule created successfully.");
+            }
+        );
+    } catch (error) {
+        console.error("[C_BuildDynamicScoreRule] Error:", error);
+    }   
+}
+
+async function C_FetchMappingRules(semesterId) {
+    if (!semesterId) {
+        console.error("[C_FetchMappingRules] Invalid semester ID.");
+        return null;
+    }
+
+    const url = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetStuSemesterDynamicScore?semesterId=${semesterId}&gcalc=noRedirect`;
+
+    try {
+        // 发起请求获取数据
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const jsonData = await response.json();
+
+        // 提取并返回 scoreMappingList
+        return jsonData?.data?.scoreMappingList || [];
+    } catch (error) {
+        console.error("[C_FetchMappingRules] Error fetching mapping rules:", error);
+        return [];
+    }
+}
+
+
+function M_initDeclaritiveRules() {
+    const noRedirectRule = {
+        id: 1000, 
+        priority: 1016, 
+        action: {
+            type: "allow" // 允许请求，不受后续规则影响
+        },
+        condition: {
+            regexFilter: ".*&gcalc=noRedirect.*", // 匹配包含 "&gcalc=noRedirect" 的请求
+            resourceTypes: ["xmlhttprequest", "sub_frame", "main_frame"] // 适用的资源类型
+        }
+    };
+
+    chrome.declarativeNetRequest.updateDynamicRules(
+        {
+            addRules: [noRedirectRule], // 添加规则
+            removeRuleIds: [1000] // 确保先移除同 ID 的旧规则
+        },
+        () => {
+        //    console.log("[M_initDeclaritiveRules] High-priority noRedirect rule created.");
+        }
+    );
+}
+
+
+function M_send_comp_msg(msgtype,data,redotimes){
+    if(redotimes<8){
+        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+            let message = {
+                type: msgtype,
+                data: data
+            };
+            try{
+                chrome.tabs.sendMessage(tabs[0].id, message);
+            }catch(e){
+                setTimeout(() => { 
+                    M_send_comp_msg(msgtype,data,redotimes+1);
+                }, (redotimes>0) ? (redotimes*100+50):1000);
+            }
+            
+        });
+    }
+ 
+ }
+
+ function M_clearCalcedData() {
+    chrome.storage.local.get(null, (items) => {
+        const keysToRemove = Object.keys(items).filter(key => {
+            return key.includes('|') || key.toLowerCase().includes('gpa') || key.toLowerCase().includes('lastUpdate');
+        });
+
+        if (keysToRemove.length > 0) {
+            chrome.storage.local.remove(keysToRemove, () => {
+                console.log(`[clearCalcedData] Removed ${keysToRemove.length} items:`, keysToRemove);
+            });
+        } else {
+            console.log("[clearCalcedData] No matching items found.");
+        }
+    });
+}
+function M_clearRedirectRules() {
+    chrome.declarativeNetRequest.getDynamicRules((rules) => {
+        const ruleIds = rules.map(rule => rule.id);
+
+        if (ruleIds.length > 0) {
+            chrome.declarativeNetRequest.updateDynamicRules(
+                {
+                    removeRuleIds: ruleIds
+                },
+                () => {
+                    console.log(`[clearRedirectRules] Removed ${ruleIds.length} rules:`, ruleIds);
+                }
+            );
+        } else {
+            console.log("[clearRedirectRules] No dynamic rules to remove.");
+        }
+    });
+}
+chrome.webRequest.onBeforeRequest.addListener(
+    async (details) => {
+        const assignmentInfoPattern = "schoolis.cn/api/LearningTask/GetDetail?learningTaskId=";
+
+        // 判断是否是需要处理的请求
+        if (
+            details.url.includes(assignmentInfoPattern) &&
+            (!details.url.includes("&gcalcSysFetch") || details.url.includes("galc_teams"))
+        ) {
+            if (details.url.includes("noRedirect") || details.url.includes("gcalc")) {
+                return; // URL 已标记，直接放行
+            }
+
+            try {
+                // Fetch 原始数据，避免循环修改
+                const fetchUrl = `${details.url}&gcalc=noRedirect`;
+                const response = await fetch(fetchUrl);
+                const result = await response.json();
+
+                const data = result?.data;
+                if (!data) return;
+
+                await delay(10);
+
+                // 根据数据状态发送消息
+                if (data.finishState === null) {
+                    M_send_str_msg("showSubmitLinkAnsBtn", data.id, 0);
+                    console.log("SEND addSubmitLinkBtn");
+                    return;
+                }
+
+                if (data.classAvgScore === null || data.classMaxScore === null) {
+                    return;
+                }
+
+                if (data.finishState === 1 && data.comment === "" && data.score === 0) {
+                    // Fetch hidden score
+                    let hiddenScore = await C_getScoreForAssignment(
+                        data.id,
+                        data.classId,
+                        data.subjectId,
+                        data.schoolSemesterId
+                    );
+
+                    hiddenScore = hiddenScore ?? -1; // 默认分数为 -1
+                    M_send_str_msg("appendHiddenScore", hiddenScore, 0);
+                }
+
+                // 构建分数数据并发送消息
+                const tmpdata = {
+                    avgS: data.classAvgScore,
+                    maxS: data.classMaxScore,
+                    totalS: data.totalScore,
+                    usrS: data.score,
+                };
+
+                if (tmpdata.avgS > 0) {
+                    M_send_comp_msg("append2Scores", tmpdata, 0);
+                }
+            } catch (error) {
+                console.error("[Assignment Info] Error:", error);
+            }
+        }
+    },
+    { urls: ["*://*.schoolis.cn/api/LearningTask/GetDetail*"] } // 模糊匹配目标 URL
+);
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
+async function C_getScoreForAssignment(learningTaskId, classId, subjectId, semesterId) {
+    const url = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
+
+    console.log(url);
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch data: ${response.statusText}`);
+        }
+        const data = await response.json();
+        // 遍历 evaluationProjectList 的 learningTaskAndExamList
+        for (const evaluationProject of data.data.evaluationProjectList) {
+            for (const task of evaluationProject.learningTaskAndExamList) {
+                console.log(task);
+                if (task.id === learningTaskId) {
+                    console.log("Found task:", task.score);
+                    return task.score; // 匹配成功，返回 ID
+                }
+            }
+        }
+        return null;
+    } catch (error) {
+        return null; 
+    }
+};
+
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!message.type) return;
+
+    console.log(`[Service Worker] Received message:`, message);
+
+    switch (message.type) {
+        case "show_process":
+            handleShowProcess(message.data, message.additionalData);
+            break;
+        case "bp-openSettings":
+            chrome.runtime.openOptionsPage();
+            break;
+        case "bp-startSyncCalender":
+            T_startCalenderSync();
+            break;
+        case "bp-startSyncTeamsTask":
+            T_startTeamsTaskSync();
+            break;
+        case "bp-startSyncXBTask":
+            T_startXBTaskSync();
+            break;
+        case "bp-checkOutdatedScore":
+            M_checkOutdatedScore();
+            break;
+        case "openOptionsPage_GPA":
+            chrome.runtime.openOptionsPage(() => {
+                setTimeout(() => {
+                    chrome.runtime.sendMessage({
+                        type: "op_openGPASettings",
+                    });
+                }, 300);
+            });
+            break;
+        case "openOptionsPage_MSBind":
+            chrome.runtime.openOptionsPage(() => {
+                setTimeout(() => {
+                    chrome.runtime.sendMessage({
+                        type: "op_openMSBindSettings",
+                    });
+                }, 300);
+            });
+            break;
+        case "recalc_GPA":
+            getFromChromeStorage(message.data+"|GPAList").then((gpalist) => {
+                C_CalcGPAForSemester(message.data, gpalist,"edited");
+                console.log("[recalc_GPA] recalc_GPA",gpalist);
+            });
+            
+            break;
+        case "saveEditedSubject":
+            applySubjectPerformanceEditing(message.smsId,message.subjectId,message.data,message.subjectScore);
+            console.log("[saveEditedSubject] saveEditedSubject",message.data);
+            break;
+        case "discardEditedSubject":
+            discardSubjectPerformanceEditing(message.smsId,message.subjectId);
+            console.log("[discardEditedSubject] discardEditedSubject",message.data);
+            break;
+        case "bindMSAccount":
+            M_BindMSAccount(message.xbAccount);
+            break;
+        case "StartMSFeature":
+             M_StartMSFeatures(message.xbAccount);
+            break;
+    }
+
+    sendResponse({ status: "received" }); // 确保响应，不然可能报错
+});
+
+function logic_combineIdsBetter(smsId, subjectId) {
+    const modulus = 10000000;
+    const factor1 = 31;
+    const factor2 = 101;
+  
+    const combinedValue = (smsId * factor1 + subjectId * factor2) % modulus;
+    return combinedValue;
+  }
+
+async function discardSubjectPerformanceEditing(smsId, subjectId) {
+    var subjectData = await getFromChromeStorage(`${smsId}|${subjectId}`);
+    const storageKey = `${smsId}|SubjectPerformanceList`;
+    var data = await getFromChromeStorage(storageKey);
+    for (let i = 0; i < data.data.studentSemesterDynamicScoreBasicDtos.length; i++) {
+        if (data.data.studentSemesterDynamicScoreBasicDtos[i].subjectId == subjectId){
+            data.data.studentSemesterDynamicScoreBasicDtos[i].subjectScore = subjectData.subjectScore;
+            data.data.studentSemesterDynamicScoreBasicDtos[i].subjectsubjectEName = subjectData.subjectEName;
+            data.data.studentSemesterDynamicScoreBasicDtos[i].subjectName = subjectData.subjectName;
+        }
+    }
+    saveToChromeStorage(storageKey, data);
+    let semesterId = Number(smsId);
+    const jsonDataUrl = `data:application/json,${encodeURIComponent(JSON.stringify(data))}`;
+
+    console.log("[UpdateWholeRule] JSON data URL:", jsonDataUrl);
+    // 创建规则
+    chrome.declarativeNetRequest.updateDynamicRules(
+        {
+            addRules: [
+                {
+                    id: semesterId, 
+                    priority: 1,
+                    action: {
+                        type: "redirect",
+                        redirect: {
+                            url: jsonDataUrl
+                        }
+                    },
+                    condition: {
+                        regexFilter: `https://tsinglanstudent\\.schoolis\\.cn/api/DynamicScore/GetStuSemesterDynamicScore\\?semesterId=${semesterId}`,
+                        resourceTypes: ["xmlhttprequest"]
+                    }
+                }
+            ],
+            removeRuleIds: [semesterId] // 移除已有的规则
+        },
+        () => {
+            console.log("[UpdateWholeRule（edit)] Rule created successfully.");
+        }
+    );
+    console.log("EditedData:", data);
+}
+async function applySubjectPerformanceEditing(smsId, subjectId, assignmentList, subjectScore) {
+    const storageKey = `${smsId}|SubjectPerformanceList`;
+    var data = await getFromChromeStorage(storageKey);
+    var subjectData = await getFromChromeStorage(`${smsId}|${subjectId}`); 
+    for (let i = 0; i < data.data.studentSemesterDynamicScoreBasicDtos.length; i++) {
+       // console.log("[applySubjectPerformanceEditing] applySubjectPerformanceEditing",data.data.studentSemesterDynamicScoreBasicDtos[i].subjectId,subjectId);
+        if (data.data.studentSemesterDynamicScoreBasicDtos[i].subjectId == subjectId) {
+        
+            //console.log("[applySubjectPerformanceEditing] Found matching subjectId:", data.data.studentSemesterDynamicScoreBasicDtos[i].subjectId);
+            data.data.studentSemesterDynamicScoreBasicDtos[i].subjectScore = subjectScore;
+            data.data.studentSemesterDynamicScoreBasicDtos[i].subjectsubjectEName = "[Edited]"+subjectData.subjectEName;
+            data.data.studentSemesterDynamicScoreBasicDtos[i].subjectName = "[Edited]"+subjectData.subjectName; 
+            break;
+        }
+      }
+    saveToChromeStorage(storageKey, data);
+    let semesterId = Number(smsId);
+    const jsonDataUrl = `data:application/json,${encodeURIComponent(JSON.stringify(data))}`;
+
+    console.log("[UpdateWholeRule] JSON data URL:", jsonDataUrl);
+    // 创建规则
+    chrome.declarativeNetRequest.updateDynamicRules(
+        {
+            addRules: [
+                {
+                    id: semesterId, 
+                    priority: 1,
+                    action: {
+                        type: "redirect",
+                        redirect: {
+                            url: jsonDataUrl
+                        }
+                    },
+                    condition: {
+                        regexFilter: `https://tsinglanstudent\\.schoolis\\.cn/api/DynamicScore/GetStuSemesterDynamicScore\\?semesterId=${semesterId}`,
+                        resourceTypes: ["xmlhttprequest"]
+                    }
+                }
+            ],
+            removeRuleIds: [semesterId] // 移除已有的规则
+        },
+        () => {
+            console.log("[UpdateWholeRule] Rule created successfully.");
+        }
+    );
+    console.log("EditedData:", data);
+
+    
+
+}
+function NameInList(name, list) {
+    try {
+        if(list===null){
+            return false;
+        }
+        const lowerCaseName = name.toLowerCase();
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].length < 5) {
+                if (name.includes(list[i])) {
+                    //console.log("[NameInList] Found matching name:", list[i],name);
+                    return true;
+                }
+            } else {
+                if (lowerCaseName.includes(list[i].toLowerCase())) {
+                  //  console.log("[NameInList] Found matching name:", list[i],name);
+                    return true;
+                }
+            }
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+
+}
+
+
+async function C_CalcGPAForSemester(semesterId,gpalist,source) {
+    let weightRules = await getFromChromeStorage("subjectWeightRules")
+    let specialWeightRules = await getFromChromeStorage("specialWeightRules")
+    console.log("weightrules",weightRules);
+
+    let weightedGPA = 0;
+    let nonweightedGPA = 0;
+    let totalWeight = 0;
+    // LowWeight = ["Fine Art","IT ","Electi","Drama","Chinese Painting","Architectural","Dance","Percussion","Vocal","Media","Programming","Spanish","Philosophy","Skills","Journalism","Creative"];
+    // NoWeight = ["Homeroom"];
+    // HighWeight = ["AP","AS","A2","A Level","ALevel"];
+
+
+    let LowWeight = weightRules.low;
+    let NoWeight = weightRules.no;
+    let HighWeight = weightRules.high;
+    let NormalWeight = [];
+    if(specialWeightRules!==null){
+        for(const rule of specialWeightRules){
+            const ruleName = Object.keys(rule)[0];
+            const ruleWeight = rule[ruleName]; 
+            if(ruleWeight==1.0){
+                NormalWeight.unshift(ruleName);
+            }
+        }
+    }
+    console.log("LowWeight",LowWeight);
+    console.log("NoWeight",NoWeight);
+    console.log("HighWeight",HighWeight);
+    console.log("NormalWeight",NormalWeight);   
+    let ChineseGPA = 0;
+    let ChineseWeight = 0; 
+
+    let back_ChineseScore;
+    let back_CHuScore;
+
+    gpalist.forEach((subject,index) => {
+        if(subject.subjectScore===null||subject.subjectScore===undefined){
+            gpalist[index].gpa=-1;
+        }else{
+            if(subject.subjectName.includes("Chinese")&&(!subject.subjectName.includes("second langua")&&(!subject.subjectName.includes("evel"))&&(!subject.subjectName.includes("AP")))){
+                if(subject.subjectName.includes("History")||subject.subjectName.includes("Humani")||subject.subjectName.includes("eogra")){
+                    ChineseGPA += (subject.subjectScore*(1/3));
+                    ChineseWeight += (1/3);
+                    back_CHuScore = subject.subjectScore;
+                }else{
+                    ChineseGPA += (subject.subjectScore*(2/3));
+                    ChineseWeight += (2/3);
+                    back_ChineseScore = subject.subjectScore;
+                }
+                gpalist[index].gpa=-1;
+            }else{
+                const subjectNameLower = subject.subjectName.toLowerCase();
+                let matchedRule = null;
+                for (const rule of specialWeightRules) {
+                    // Get the single key and value from the rule object
+                    const ruleName = Object.keys(rule)[0];
+                    const ruleWeight = rule[ruleName];
+                    const ruleNameLower = ruleName.toLowerCase();
+
+                    // Log to see what's being checked
+                    console.log(`Checking subject: "${subjectNameLower}" against keyword: "${ruleNameLower}"`);
+
+                    // Check if the subject name includes the rule name (case-insensitive)
+                    if (subjectNameLower.includes(ruleNameLower)) {
+                        console.log("Match found!", { keyword: ruleName, weight: ruleWeight });
+                        matchedRule = { keyword: ruleName, weight: ruleWeight };
+                        break; // Exit the loop on the first match
+                    }
+                }
+                if (matchedRule) {  
+                    gpalist[index].gpa = ScoreToGPA(subject.subjectScore);
+                    // 如果特殊权重值等于 1.5，执行加权逻辑
+                    if (matchedRule.weight === 1.5) {
+                        gpalist[index].weight = 1;
+                        gpalist[index].gpa = gpalist[index].gpa > 0 ? gpalist[index].gpa + 0.5 : gpalist[index].gpa;
+                        gpalist[index].isWeighted = true;
+                    } else {
+                        // 对于其他特殊权重，直接设置 weight
+                        gpalist[index].weight = matchedRule.weight;
+                        gpalist[index].isWeighted = false;
+                    }
+                    console.log("SpecialWeightMatched!",subject.subjectName,matchedRule);
+                }else{
+                    gpalist[index].gpa = ScoreToGPA(subject.subjectScore);
+                    gpalist[index].isWeighted = false;
+                    if(NameInList(subject.subjectName,NormalWeight))
+                        gpalist[index].weight = 1;
+                    else if(NameInList(subject.subjectName,HighWeight)){
+                        gpalist[index].weight = 1;
+                        gpalist[index].gpa = gpalist[index].gpa>0? gpalist[index].gpa+0.5:gpalist[index].gpa;
+                        gpalist[index].isWeighted = true;
+                    }else if(NameInList(subject.subjectName,NoWeight)){
+                        gpalist[index].weight = 0;
+                    }else if(NameInList(subject.subjectName,LowWeight)){
+                        gpalist[index].weight = 0.5;
+                    }else{
+                        gpalist[index].weight = 1;
+                    }
+                }
+                weightedGPA += subject.gpa * gpalist[index].weight;
+                totalWeight += gpalist[index].weight; 
+                nonweightedGPA += (subject.gpa>0?(subject.isWeighted?(subject.gpa-0.5):subject.gpa):(subject.gpa)) * gpalist[index].weight;
+            }
+        }
+    });
+
+    gpalist = gpalist.filter(item => item.gpa !== -1);
+    if(ChineseWeight>0){
+        gpalist.push({
+            subjectName: "Chinese Culture",
+            subjectScore: ChineseGPA/ChineseWeight,
+            gpa: ScoreToGPA(ChineseGPA/ChineseWeight.toFixed(2)),
+            weight: 1,
+            isWeighted: false,
+            chiAdditionalData: {chinese:back_ChineseScore,history:back_CHuScore}
+        });
+        nonweightedGPA += ScoreToGPA(ChineseGPA/ChineseWeight);
+        weightedGPA += ScoreToGPA(ChineseGPA/ChineseWeight);
+        totalWeight +=1;
+        console.log("ChineseGPAPushed!",gpalist[gpalist.length]);
+    }
+    
+    console.log(totalWeight,weightedGPA,nonweightedGPA);
+    weightedGPA /= totalWeight;
+    nonweightedGPA /= totalWeight;
+    
+    saveToChromeStorage(`gpaList${semesterId}`, gpalist);
+    let schoolisGPA = null;
+
+    console.log(gpalist,weightedGPA,nonweightedGPA)
+    const response = await fetch("https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetGpa?semesterId="+semesterId);
+    if (!response.ok) {throw new Error(`CalcGPAHTTPError:${response.status}`);}
+    const data = await response.json();
+    
+    if((data.source===null||data.source===undefined)&&source!=="edited"){
+        schoolisGPA = data.data;
+    }
+    
+    console.log("save",semesterId,{gpa:weightedGPA,noweight_gpa:nonweightedGPA,schoolisGPA:schoolisGPA});
+    saveToChromeStorage(`gpa${semesterId}`, {gpa:weightedGPA,noweight_gpa:nonweightedGPA,schoolisGPA:schoolisGPA,source});
+
+    if(schoolisGPA===null){
+        const jsonResponse = {
+            "data": formatNumber(weightedGPA,2),
+            "msgCN": null,
+            "msgEN": null,
+            "state": 0,
+            "msg": null,
+            "source": source
+        };
+
+        const jsonDataUrl = `data:application/json,${encodeURIComponent(JSON.stringify(jsonResponse))}`;
+
+        // 创建规则
+        
+        chrome.declarativeNetRequest.updateDynamicRules(
+            {
+                removeRuleIds: [parseInt("6"+semesterId)], // Ensure removeRuleIds is also an integer
+                addRules: [
+                {
+                    id: parseInt("6"+semesterId), // Explicitly convert to an integer
+                    priority: 1,
+                    action: {
+                    type: "redirect",
+                    redirect: {
+                        url: jsonDataUrl
+                    }
+                    },
+                    condition: {
+                    regexFilter: `https://tsinglanstudent\\.schoolis\\.cn/api/DynamicScore/GetGpa\\?semesterId=${semesterId}`,
+                    resourceTypes: ["xmlhttprequest"]
+                    }
+                }
+                ],
+            },
+            () => {
+                console.log("CALCGPA:Declarative Net Request rule updated successfully.", semesterId, jsonDataUrl);
+            }
+            );
+    }
+}
+
+function ScoreToGPA(score) {;
+    const scoreMappingConfigs = [
+      { "minValue": 97, "maxValue": 9999.9, "gpa": 4.3 },
+      { "minValue": 93, "maxValue": 96.9999, "gpa": 4 },
+      { "minValue": 90, "maxValue": 92.9999, "gpa": 3.7 },
+      { "minValue": 87, "maxValue": 89.9999, "gpa": 3.3 },
+      { "minValue": 83, "maxValue": 86.9999, "gpa": 3 },
+      { "minValue": 80, "maxValue": 82.9999, "gpa": 2.7 },
+      { "minValue": 77, "maxValue": 79.9999, "gpa": 2.3 },
+      { "minValue": 73, "maxValue": 76.9999, "gpa": 2 },
+      { "minValue": 70, "maxValue": 72.9999, "gpa": 1.7 },
+      { "minValue": 67, "maxValue": 69.9999, "gpa": 1.3 },
+      { "minValue": 63, "maxValue": 66.9999, "gpa": 1 },
+      { "minValue": 60, "maxValue": 62.9999, "gpa": 0.7 },
+      { "minValue": 0, "maxValue": 59.9999, "gpa": 0 }
+    ];
+
+    for (const config of scoreMappingConfigs) {
+      if (score >= config.minValue && score <= config.maxValue) {
+        return config.gpa;
+      }
+    }
+    return 0; 
+}
+
+function formatNumber(number, decimalPlaces) {
+    const formatted = Number(parseFloat(number.toFixed(decimalPlaces)));
+    return String(formatted);
+}
+
+
+
+
+
+//###########################TEAMS BINDING SECTION############################
+async function getCryptoKey() {
+  const platformInfo = await chrome.runtime.getPlatformInfo();
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(`extension-${chrome.runtime.id}-on-${platformInfo.os}`),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+     
+      salt: new TextEncoder().encode("subcrypt-static-salt"),
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+async function encryptUsingSubCrypt(plainText) {
+  const key = await getCryptoKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plainText);
+
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoded
+  );
+
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv, 0);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+
+
+async function decryptUsingSubCrypt(encryptedStr) {
+  const key = await getCryptoKey();
+  const combined = Uint8Array.from(atob(encryptedStr), c => c.charCodeAt(0));
+  const iv = combined.slice(0, 12);
+  const data = combined.slice(12);
+
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    data
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+/*
+                    chrome.storage.local.set({ accessToken }, function() {
+                        console.log("Access Token stored successfully.");
+                    });
+*/
+function generateCodeVerifier() {
+  const array = new Uint8Array(64); // 64字节足够安全
+  crypto.getRandomValues(array);
+  return Array.from(array)
+    .map(byte => ('0' + byte.toString(16)).slice(-2))
+    .join('');
+}
+
+// 将 code_verifier 进行 SHA-256 哈希并 base64url 编码
+async function generateCodeChallenge(codeVerifier) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(codeVerifier);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+
+  const base64String = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  return base64String;
+}
+
+//#TeamsFunctionsSTART:
+
+async function fetchTeamsUserProfile() {
+    try {
+        // 异步获取token
+        const result = await new Promise((resolve, reject) => {
+            chrome.storage.local.get(['MSaccessToken'], function (result) {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(result);
+                }
+            });
+        });
+
+        const accessToken = result.MSaccessToken;
+        if (!accessToken) {
+            return { state: -1, error: 'No access token found.' };
+        }
+
+        const response = await fetch('https://graph.microsoft.com/v1.0/me', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (!response.ok) {
+            return { state: -1, error: `Failed to fetch user profile. Status: ${response.status}` };
+        }
+
+        const data = await response.json();
+        data.state = 1;
+        return data;
+
+    } catch (error) {
+        return { state: -1, error: error.toString() };
+    }
+}
+
+function T_fetchOneDriveFiles(){
+    chrome.storage.local.get(['MSaccessToken'], function(result) {
+        const accessToken = result.MSaccessToken;
+        if (!accessToken) {
+            console.error('No access token found.');
+            return;
+        }
+
+        fetch('https://graph.microsoft.com/v1.0/drives/b!u5FOjqjM70aT-6aTDu4NiTJQZlXesQFHq129qEqSiXEcpmsDu-6FTahUDrBEEthG/items/015UTTMIMY4BO6WCTR5VF2Z572E6XBG7BR', {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to fetch user classes');
+            }
+            return response.json();
+        })
+        .then(fileData => {
+            console.log("OneDriveFileData:",fileData);
+        });
+    });
+}
+
+
+// 从chrome.storage.local获取保存的访问令牌，获取用户的课程信息并输出所有作业
+function T_fetchTeamsUserClassesAndAssignments() {
+    getFromChromeStorage("MSTasks").then(tasks => {
+        tasks = tasks || [];
+        const ignoredTasks = tasks.filter(task => task.IgnoredState === 1);
+        chrome.storage.local.get(['MSaccessToken'], function(result) {
+            const accessToken = result.MSaccessToken;
+            if (!accessToken) {
+                console.error('No access token found.');
+                return;
+            }
+    
+            fetch('https://graph.microsoft.com/v1.0/education/me/classes', {
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to fetch user classes');
+                }
+                return response.json();
+            })
+            .then(classesData => {
+                const classes = classesData.value; // 获取课程列表
+                if (!classes || classes.length === 0) {
+                    console.log('No classes found.');
+                    return;
+                }
+    
+                let allAssignments = []; // 存储所有课程的作业
+                var MSTaskID = 1016;
+                // 遍历每个课程
+                classes.forEach(classInfo => {
+                    const classId = classInfo.id;
+                    const className = classInfo.displayName;
+                    
+                    fetch(`https://graph.microsoft.com/v1.0/education/classes/${classId}/assignments`, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch assignments for class ${className}`);
+                        }
+                        return response.json();
+                    })
+                    .then(assignmentsData => {
+                        const assignments = assignmentsData.value;
+                        
+                        if (assignments && assignments.length > 0) {
+                            console.log(`Assignments for class: ${className}`);
+    
+                            // 遍历每个 assignment 并创建 assignment 对象
+                            assignments.forEach(assignment => {
+                                //if 
+                                const currentDate = new Date();
+                                const fourteenDaysAgo = new Date();
+                                fourteenDaysAgo.setDate(currentDate.getDate() - 14);
+                                if(new Date(assignment.assignedDateTime)>=fourteenDaysAgo){
+                                    T_getAssignmentSubmissionState(classId, assignment.id, accessToken).then((getsubmissionData) => {
+                                        const submissionData = getsubmissionData || {status: 'unknown', res: ''};
+                                        // Adjust due time: if it's 09:00 (UTC+8), change to 23:59 of the same day (UTC+8)
+                                        let adjustedEndTime = assignment.dueDateTime;
+                                        try {
+                                            const dueUtc = new Date(assignment.dueDateTime);
+                                            if (!isNaN(dueUtc.getTime())) {
+                                                const dueUtcPlus8 = new Date(dueUtc.getTime() + 8 * 60 * 60 * 1000);
+                                                if (dueUtcPlus8.getHours() === 8 && dueUtcPlus8.getMinutes() === 0) {
+                                                    // Set to 23:59:00.000 in UTC+8, then convert back to UTC (Z)
+                                                    dueUtcPlus8.setHours(23, 59, 0, 0);
+                                                    const adjustedUtc = new Date(dueUtcPlus8.getTime() - 8 * 60 * 60 * 1000);
+                                                    adjustedEndTime = adjustedUtc.toISOString();
+                                                }
+                                            }
+                                        } catch (e) {
+                                            console.warn('Failed to adjust due time, using original.', e);
+                                        }
+                                        //if ignoredTasks contains the assignment, set IgnoredState to 1
+                                        if(ignoredTasks.some(task => task.typeName+task.subjectName === assignment.displayName+className)){
+                                            IgnoredState = 1;
+                                        }else{
+                                            IgnoredState = 0;
+                                        }
+                                        const assignmentObj = {
+                                            subjectName: className,
+                                            typeName: assignment.displayName,
+                                            beginTime: assignment.assignedDateTime,
+                                            endTime: adjustedEndTime,
+                                            IgnoredState: IgnoredState,
+                                            id: 'ms'+MSTaskID,
+                                            msId: assignment.id,
+                                            webUrl: assignment.webUrl,
+                                            content: assignment.instructions?.content || '',
+                                            status: submissionData.status || 'unknown',
+                                            submitRes: submissionData.res || '',
+                                            fileRes: assignment.resourcesFolderUrl || ''
+                                        };
+                                        console.log(assignmentObj);
+                                        MSTaskID += 1;
+                                        allAssignments.push(assignmentObj);
+                                    });
+                                    
+                                }
+                                
+                            });
+                        } else {
+                            console.log(`No assignments found for class: ${className}`);
+                        }
+                    })  
+                    .catch(error => {
+                        console.error(`Error fetching assignments for class ${className}:`, error);
+                    });
+                });
+    
+                // 使用 setTimeout 确保所有异步操作都完成
+                setTimeout(() => {
+                    // 当前日期
+                    const currentDate = new Date();
+                    // 14天前的日期
+                    const fourteenDaysAgo = new Date();
+                    fourteenDaysAgo.setDate(currentDate.getDate() - 14);
+                
+                    // 过滤和排序作业
+                    const filteredAssignments = allAssignments
+                        .filter(assignment => new Date(assignment.beginTime) >= fourteenDaysAgo ) // 筛选出14天内的任务
+                        .sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime)); // 按开始时间排序
+                
+                    // 将作业列表存入 local storage
+                    saveToChromeStorage("MSTasks", filteredAssignments);
+                    console.log("[FinalTeamsTasks]", filteredAssignments);
+                    M_send_str_msg("MS_finishedAssignmentGet", filteredAssignments,0)
+                }, 2000); // 延迟 2 秒等待所有请求完成
+                
+            })
+            .catch(error => {
+                console.error('Error fetching user classes:', error);
+            });
+        });
+    });
+}
+
+async function T_getAssignmentSubmissionState(classId, assignmentId, accessToken) {
+    const url = `https://graph.microsoft.com/v1.0/education/classes/${classId}/assignments/${assignmentId}/submissions`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+
+        const data = await response.json();
+        const submissions = data.value;
+        if (submissions && submissions.length > 0) {
+            submissions.sort((a, b) => {
+                const dateA = new Date(a.submittedDateTime);
+                const dateB = new Date(b.submittedDateTime);
+                return dateB - dateA;
+            });
+            const latestSubmission = submissions[0];
+            console.log(`Latest Submission ID: ${latestSubmission.id}`);
+            console.log(`Latest Submission State: ${latestSubmission.status}`);
+            return {
+                status: latestSubmission.status=== "working"?"unsubmitted": latestSubmission.status,
+                res: latestSubmission.resourcesFolderUrl
+            };
+        } else {
+            return {
+                status: 'working',
+                res: ''
+            };
+        }
+    } catch (error) {
+        console.error('Error fetching submission state:', error);
+        return {
+            status: 'error',
+            res: ''
+        };
+    }
+}
+
+
+async function T_SetAssignmentAlert_MSAssignment() { 
+    chrome.storage.local.get(['MSaccessToken'], async function(result) {
+        M_send_str_msg("MSPanel_showSyncing",2,-1);
+        const accessToken = result.MSaccessToken;
+        if (!accessToken) {
+            console.error('No access token found.');
+            return;
+        }
+        let assignments = await getFromChromeStorage("MSTasks");
+        assignments=assignments?assignments:[]
+        if (assignments) {
+            let TotalEvents = []
+            let beingSynced = await getFromChromeStorage("MS_BeingSynced") || [];
+            if(beingSynced==null){
+                beingSynced = [];
+            }
+            assignments.forEach(assignment => {
+                // Format endTime to UTC+8 and display as YYYY-MM-DD HH:MM
+                let endTimeUTC8 = "";
+                let startTime = assignment.endTime;
+                if (assignment.endTime) {
+                    const date = new Date(assignment.endTime);
+                    // add 8 hours for UTC+8 
+                    date.setHours(date.getHours() + 8);
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    endTimeUTC8 = `${year}-${month}-${day} ${hours}:${minutes}`;
+
+                    // Set startTime to 1 hour before endTime
+                    const startDate = new Date(assignment.endTime);
+                    startDate.setHours(startDate.getHours() - 1);
+                    startTime = startDate.toISOString();
+                }
+                let gcId = "GCalcAutoSync_Tasks_MS_"+assignment.endTime+assignment.typeName+assignment.subjectName[0]+assignment.subjectName[4];
+                let event = {
+                    startTime: startTime,
+                    endTime: assignment.endTime,
+                    title: "[Due] " + assignment.typeName,
+                    id: assignment.id,
+                    location: assignment.subjectName,
+                    content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.typeName}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p><a class="button" href="${assignment.webUrl}">${tlang("查看任务详细","Click here to see in Teams")}</a></p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none" >gcMark{${gcId}}</p></div>`,
+                    tag: "GCalcAutoSync_Tasks_MS",
+                    reminderMinutesBeforeStart: 360
+                };
+                if (beingSynced.includes(gcId)) {
+                    console.log("skip", gcId);
+                }else{
+                    TotalEvents.push(event);
+                }
+            });
+            console.log("[TotalEventsSyncToAler]", TotalEvents);
+            T_batchAddToMSCalender(TotalEvents, accessToken);
+        }
+    });
+}
+
+
+async function T_SetAssignmentAlert_XBAssignment() { 
+    chrome.storage.local.get(['MSaccessToken'], async function(result) {
+        M_send_str_msg("MSPanel_showSyncing",3,-1);
+        const accessToken = result.MSaccessToken;
+        if (!accessToken) {
+            console.error('No access token found.');
+            return;
+        }
+        
+        try {
+            // Calculate date range: Today-14days to Today+14days
+            const today = new Date();
+            const beginDate = new Date(today);
+            beginDate.setDate(today.getDate() - 14);
+            const endDate = new Date(today);
+            endDate.setDate(today.getDate() + 14);
+            
+            // Format dates as YYYY-MM-DD
+            const beginTime = beginDate.toISOString().split('T')[0];
+            const endTime = endDate.toISOString().split('T')[0];
+            
+            // Fetch tasks from Xiaobao Platform API
+            const apiUrl = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=31627&subjectId=null&typeId=null&key=&beginTime=${beginTime}&endTime=${endTime}&mode=null&pageIndex=1&pageSize=12`;
+            
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            
+            if (data && data.data && data.data.list) {
+                const assignments = data.data.list;
+                let TotalEvents = []
+                let beingSynced = await getFromChromeStorage("MS_BeingSynced") || [];
+                if(beingSynced==null){
+                    beingSynced = [];
+                }
+                
+                assignments.forEach(assignment => {
+                    // Only process tasks with learningTaskState = 2 (unfinished)
+                    if (assignment.learningTaskState !== 2) {
+                        return;
+                    }
+                    
+                    // Parse the endTime from the API response format
+                    let endTimeDate = null;
+                    if (assignment.endTime) {
+                        // Parse the date format: "/Date(1760710800000+0800)/"
+                        const match = assignment.endTime.match(/\/Date\((\d+)/);
+                        if (match) {
+                            endTimeDate = new Date(parseInt(match[1]));
+                        }
+                    }
+                    
+                    if (!endTimeDate) {
+                        return; // Skip if no valid end time
+                    }
+                    
+                    // Format endTime to UTC+8 and display as YYYY-MM-DD HH:MM
+                    let endTimeUTC8 = "";
+                    let startTime = endTimeDate.toISOString();
+                    if (endTimeDate) {
+                        const date = new Date(endTimeDate);
+                        // add 8 hours for UTC+8 
+                        date.setHours(date.getHours() + 8);
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        endTimeUTC8 = `${year}-${month}-${day} ${hours}:${minutes}`;
+
+                        // Set startTime to 1 hour before endTime
+                        const startDate = new Date(endTimeDate);
+                        startDate.setHours(startDate.getHours() - 1);
+                        startTime = startDate.toISOString();
+                    }
+                    
+                    let gcId = "GCalcAutoSync_Tasks_XB_"+assignment.endTime+assignment.typeName+assignment.subjectName[0]+assignment.subjectName[4];
+                    let event = {
+                        startTime: startTime,
+                        endTime: endTimeDate.toISOString(),
+                        title: "[Due] " + assignment.typeName,
+                        id: assignment.id,
+                        location: assignment.subjectName,
+                        content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.typeName}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p><a class="button" href="#">${tlang("查看任务详细","Click here to see task details")}</a></p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none" >gcMark{${gcId}}</p></div>`,
+                        tag: "GCalcAutoSync_Tasks_XB",
+                        reminderMinutesBeforeStart: 360
+                    };
+                    if (beingSynced.includes(gcId)) {
+                        console.log("skip", gcId);
+                    }else{
+                        TotalEvents.push(event);
+                    }
+                });
+                console.log("[TotalEventsSyncToAler]", TotalEvents);
+                T_batchAddToMSCalender(TotalEvents, accessToken);
+            }
+        } catch (error) {
+            console.error('Error fetching Xiaobao tasks:', error);
+        }
+    });
+}
+
+
+
+const CLIENT_ID = "13f429db-81e8-4b32-8f48-e68f0adb25e1";
+const TENANT = "7222912a-435d-423b-b22b-74b909c3bf8b"; //Tsinglan
+const REDIRECT_URI = `https://${chrome.runtime.id}.chromiumapp.org/auth`;
+const SCOPES = "User.Read Calendars.Read Calendars.ReadWrite offline_access  email EduRoster.ReadBasic EduAssignments.Read openid profile";
+
+const AUTH_URL = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/authorize`;
+const TOKEN_URL = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`;
+
+
+async function M_BindMSAccount(xbAccount) {
+    //不再传入xbAccount
+    if(xbAccount=="Rebind"){
+        xbAccount=(await getFromChromeStorage("MSUserProfile"))["xbAccount"];
+    }
+    try {
+        console.log("M_BindMSAccount[Start]");
+        await getRefreshToken();
+        console.log("M_BindMSAccount[GetRefreshToken]");
+        await exchangeForAccess();
+        console.log("M_BindMSAccount[ExchangeForAccess]");
+        let userProfile = await fetchTeamsUserProfile();
+        if (userProfile.state === 1) {
+            console.log("M_BindMSAccount[FetchTeamsUserProfile]", userProfile);
+            saveToChromeStorage("MSUserProfile", {
+                name: userProfile.displayName,
+                email: userProfile.mail,
+                state: 1,
+                xbAccount: xbAccount
+            });
+            M_send_comp_msg("MSAccountBinded", null, 0);
+            M_StartMSFeatures();
+        } else {
+            console.error("M_BindMSAccount[FetchTeamsUserProfile] Error:", userProfile.error);
+            M_send_comp_msg("MSAccountBindFailed", userProfile.error+("  [MS]extId:")+chrome.runtime.id, 0);
+        }
+    } catch (error) {
+        console.error("M_BindMSAccount Error:", error.message || error);
+        M_send_comp_msg("MSAccountBindFailed", (error.message || error)+("  [CR]extId:")+chrome.runtime.id, 0);
+    }
+}
+
+// 1. 获取 refreshToken 并存储到 chrome.storageasync function getRefreshToken() {
+async function getRefreshToken() {
+    const state = Math.random().toString(36).substring(2);
+    const codeVerifier = generateCodeVerifier();
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+     const url = `${AUTH_URL}?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_mode=query&scope=${encodeURIComponent(SCOPES)}&code_challenge=${codeChallenge}&code_challenge_method=S256&state=${state}`;
+
+    // Wrap chrome.identity.launchWebAuthFlow in a Promise
+    const redirectUrl = await new Promise((resolve, reject) => {
+        chrome.identity.launchWebAuthFlow(
+            { url: url, interactive: true },
+            (redirectUrl) => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(redirectUrl);
+                }
+            }
+        );
+    });
+
+    const params = new URLSearchParams(new URL(redirectUrl).search);
+    const code = params.get("code");
+
+    const body = new URLSearchParams({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        code: code,
+        redirect_uri: REDIRECT_URI,
+        grant_type: "authorization_code",
+        code_verifier: codeVerifier,
+    });
+
+    const response = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+    });
+
+    const tokenResult = await response.json();
+    const refreshToken = await encryptUsingSubCrypt(tokenResult.refresh_token);
+
+    // Wrap chrome.storage.local.set in a Promise
+    await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ MSrefresh_token: refreshToken }, () => {
+            if (chrome.runtime.lastError) {
+                reject(chrome.runtime.lastError);
+            } else {
+                console.log("Refresh token stored.");
+                resolve();
+            }
+        });
+    });
+
+    return refreshToken; // Return the refresh token after storage
+}
+
+// 2. 使用 refreshToken 换取 accessToken
+async function exchangeForAccess() {
+    let refreshToken = await readRefreshToken();
+
+    const body = new URLSearchParams({
+        client_id: CLIENT_ID,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        scope: SCOPES
+    });
+
+    const response = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString()
+    });
+
+    const tokenResult = await response.json();
+    let MSaccessToken = tokenResult.access_token;
+    //console.log(tokenResult)
+    //console.log("Access Token:", tokenResult.access_token);
+    chrome.storage.local.set({ MSaccessToken }, function() {
+        console.log("Access Token stored successfully.");
+    });
+}
+
+// 3. 从 chrome.storage.local 中读取 refreshToken
+async function readRefreshToken() {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(["MSrefresh_token"], (result) => {
+      // 检查是否存在 refresh_tokenf
+      if (!result.MSrefresh_token) {
+        console.log("No refresh_token found."); 
+        reject("No refresh token found");
+        return;
+      }
+
+      // 异步解密 refresh_token
+      decryptUsingSubCrypt(result.MSrefresh_token)
+        .then((decryptedRefreshToken) => {
+          resolve(decryptedRefreshToken);  // 返回解密后的 token
+        })
+        .catch((error) => {
+          reject("Decryption failed: " + error);  // 解密失败时的错误处理
+        });
+    });
+  });
+}
+
+async function checkTeamsBindingState(){
+    state = await T_initMS();
+}
+
+async function M_StartMSFeatures() {
+    saveToChromeStorage("MSFeatureEnabled", false);
+    MSProfile = await getFromChromeStorage("MSUserProfile");
+
+    const response = await fetch("https://tsinglanstudent.schoolis.cn/api/MemberShip/GetCurrentStudentInfo");
+    const result = await response.json();
+    const xbProfile = result.data.loginName;
+    
+    if(await getFromChromeStorage("MSTasks")==null){
+        saveToChromeStorage("MSTasks", []); //防止为空逻辑
+    }
+
+    if (!MSProfile || MSProfile.state !== 1) {
+        console.log("![TS]No MS Profile or not bound");
+        return;
+    } else if (MSProfile.xbAccount !== xbProfile) {
+        console.log("![TS]Different MS Account!Notemas");
+        return;
+    } else {
+        if (await T_initMS() !== 1) {
+            console.log("![TS]Init MS Failed, Rebinding");
+            M_BindMSAccount(xbProfile);
+            return;
+        } else {
+            console.log("![TS]MS Account Matched!!");
+            saveToChromeStorage("MSFeatureEnabled", true);
+            T_fetchTeamsUserClassesAndAssignments();
+            T_checkCalenderSync();
+            T_checkTeamsTaskSync();
+            T_checkXBTaskSync();
+        }
+    }
+}
+
+async function T_initMS() {
+    let MSAccountData;
+    try {
+        MSAccountData = await fetchTeamsUserProfile();
+        console.log("[T_INITMS]CB:", MSAccountData);
+
+        if (MSAccountData.state === -1) {
+        console.log("[T_INITMS]AccessExpired, Retrying");
+        await exchangeForAccess();
+
+        MSAccountData = await fetchTeamsUserProfile();
+
+        if (MSAccountData.state === -1) {
+            //M_send_comp_msg("tip_err", { cont: "失败: " + MSAccountData.error }, 0);
+            console.log("[T_INITMS]Failed");
+            M_BindMSAccount("Rebind");
+            return 0;
+        } else {
+            console.log("[T_INITMS]Success at 2",MSAccountData);
+            //M_send_comp_msg("tip_suc", { cont: "成功" }, 0);
+            return 1; 
+        }
+        } else {
+        console.log("[T_INITMS]Success at 1", MSAccountData);
+        }
+
+        return 1;
+    } catch (e) {
+        console.log("[T_INITMS]Other Error", e);
+        //M_send_comp_msg("tip_err", { cont: e }, 0);
+        return 0; 
+    }
+}
+async function T_batchAddToMSCalender(events, accessToken) {
+	// events: [{startTime, endTime, location, title, content, tag}]
+	const BATCH_SIZE = 20;
+	let overallSuccess = 0;
+	let overallFailed = 0;
+	for (let i = 0; i < events.length; i += BATCH_SIZE) {
+		const batch = events.slice(i, i + BATCH_SIZE);
+		let beingSynced = await getFromChromeStorage("MS_BeingSynced");
+		if (beingSynced === null) {
+			beingSynced = [];
+		}
+
+		const MAX_RETRY = 5;
+		let attempts = 0;
+		let pendingItems = batch.map((event, idxInBatch) => ({ event, idxInBatch }));
+		let totalSuccess = 0;
+
+		while (pendingItems.length > 0 && attempts < MAX_RETRY) {
+			const batchRequest = {
+				requests: pendingItems.map((item, idx) => ({
+					id: String(idx + 1),
+					method: "POST",
+					url: "/me/events",
+					headers: {
+						"Content-Type": "application/json"
+					},
+					body: {
+						subject: item.event.title,
+						body: {
+							contentType: 'HTML',
+							content: item.event.content
+						},
+						start: {
+							dateTime: item.event.startTime,
+							timeZone: 'China Standard Time'
+						},
+						end: {
+							dateTime: item.event.endTime,
+							timeZone: 'China Standard Time'
+						},
+						location: {
+							displayName: item.event.location
+						},
+						categories: [item.event.tag],
+						isReminderOn: true,
+						reminderMinutesBeforeStart: item.event.reminderMinutesBeforeStart?item.event.reminderMinutesBeforeStart:5
+					}
+				}))
+			};
+
+			const response = await fetch('https://graph.microsoft.com/v1.0/$batch', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${accessToken}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(batchRequest)
+			});
+
+			const result = await response.json();
+			let nextPending = [];
+			let cntSuccessThisAttempt = 0;
+			let failedIndicesThisAttempt = [];
+
+			for (let j = 0; j < result.responses.length; j++) {
+				const r = result.responses[j];
+				if (r.status !== 201) {
+					nextPending.push(pendingItems[j]);
+					failedIndicesThisAttempt.push(pendingItems[j].idxInBatch);
+					console.error("Event creation failed:", r.status, r.body);
+				} else {
+					cntSuccessThisAttempt++;
+					totalSuccess++;
+					const regex = /gcMark{([^"]*)}/;
+					const suc = r.body;
+					const match = suc?.body?.content?.match?.(regex);
+					if (match && match[1]) {
+						beingSynced.push(match[1]);
+					}//如果想要记录保存要在event里面加入gcMark
+				}
+			}
+
+			console.log(`[T_BATCHADD]Attempt ${attempts + 1}: Success ${cntSuccessThisAttempt}, Failed ${failedIndicesThisAttempt.length}, TotalInThisAttempt ${pendingItems.length}`);
+			if (failedIndicesThisAttempt.length > 0) {
+				console.log(`[T_BATCHADD]Failed indices (relative to current 20-size chunk): ${failedIndicesThisAttempt.join(',')}`);
+			}
+			saveToChromeStorage("MS_BeingSynced", beingSynced);
+
+			attempts++;
+			if (nextPending.length > 0 && attempts < MAX_RETRY) {
+				await delay(1000);
+			}
+			pendingItems = nextPending;
+		}
+
+		const finalFailed = batch.length - totalSuccess;
+		console.log(`[T_BATCHADD]Success: ${totalSuccess}, Failed: ${finalFailed}, total: ${batch.length}`);
+		if (finalFailed > 0) {
+			console.error(`[T_BATCHADD]Failed indices after ${MAX_RETRY} attempts (relative to current 20-size chunk): ${pendingItems.map(p => p.idxInBatch).join(',')}`);
+		}
+
+		overallSuccess += totalSuccess;
+		overallFailed += finalFailed;
+
+		await delay(1000);
+	}
+	return { amountOfSuccess: overallSuccess, amountOfFailed: overallFailed };
+}
+
+async function T_SyncToTeamsCalender() {
+	let calendershift = 1;
+	const syncResultDefault = { amountOfSuccess: 0, amountOfFailed: 0 };
+
+	M_send_str_msg("MSPanel_showSyncing",1,-1);
+    
+	return await new Promise((resolve) => {
+		getFromChromeStorage("MSFeaturesSettings").then(function(settingsData){
+			if(settingsData?.CalenderSyncShift==null || settingsData?.CalenderSyncShift==undefined || settingsData?.CalenderSyncShift==1){
+				calendershift = 1;
+			} else {
+				calendershift = 0;
+			}
+			chrome.storage.local.get('MSaccessToken', async function(getResult){
+				const accessToken = getResult.MSaccessToken;
+				if(!getResult.MSaccessToken){
+					M_send_str_msg("tip_err", "没有访问令牌", 0);
+					console.log("没有访问令牌");
+					resolve(syncResultDefault);
+					return;
+				}
+				const url = 'https://tsinglanstudent.schoolis.cn/api/Schedule/ListScheduleByParent';
+				const data = (function() {
+					const today = new Date();
+					today.setHours(0, 0, 0, 0);
+					const endDate = new Date(today);
+					endDate.setDate(today.getDate() + 14);
+					const formatDate = (date) => date.toISOString().split('T')[0];
+					return {
+						beginTime: formatDate(today),
+						endTime: formatDate(endDate)
+					};
+				})();
+				let beingSynced = await getFromChromeStorage("MS_BeingSynced");
+				if(beingSynced==null){
+					beingSynced = [];
+				}
+				try {
+					const response = await fetch(url, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify(data)
+					});
+					if (response.ok) {
+						const responseData = await response.json();
+						const xbEvents = responseData.data;
+						console.log("_____MSCalendar", xbEvents);
+						function applyCalendarShift(beginDotNet, endDotNet) {
+							if (calendershift !== 1) {
+								return { begin: beginDotNet, end: endDotNet };
+							}
+							const matchBegin = /\/Date\((\d+)([+-]\d{4})\)\//.exec(beginDotNet);
+							const matchEnd = /\/Date\((\d+)([+-]\d{4})\)\//.exec(endDotNet);
+							if (!matchBegin || !matchEnd) {
+								return { begin: beginDotNet, end: endDotNet };
+							}
+							const beginDate = new Date(parseInt(matchBegin[1], 10));
+							const endDate = new Date(parseInt(matchEnd[1], 10));
+							const bH = beginDate.getHours();
+							const bM = beginDate.getMinutes();
+							const eH = endDate.getHours();
+							const eM = endDate.getMinutes();
+							function buildDate(baseDate, hours, minutes) {
+								const d = new Date(baseDate.getTime());
+								d.setHours(hours, minutes, 0, 0);
+								return d;
+							}
+							let newBegin = beginDate;
+							let newEnd = endDate;
+							// Strictly match both begin and end times
+							if (bH === 8 && bM === 25 && eH === 9 && eM === 5) {
+								newBegin = buildDate(beginDate, 8, 0);
+								newEnd = buildDate(endDate, 8, 40);
+							} else if (bH === 9 && bM === 15 && eH === 9 && eM === 55) {
+								newBegin = buildDate(beginDate, 8, 40);
+								newEnd = buildDate(endDate, 9, 20);
+							} else if (bH === 12 && bM === 35 && eH === 13 && eM === 15) {
+								newBegin = buildDate(beginDate, 11, 50);
+								newEnd = buildDate(endDate, 12, 30);
+							}
+							return {
+								begin: convertToXBDate(newBegin.toISOString()),
+								end: convertToXBDate(newEnd.toISOString())
+							};
+						}
+						// 构建 events 数组
+						const events = xbEvents.flatMap(classInfo => {
+							const shifted = applyCalendarShift(classInfo.beginTime, classInfo.endTime);
+							const startTime = convertToMSDate(shifted.begin);
+							const endTime = convertToMSDate(shifted.end);
+							let gcId = `GCalcAutoSync_Class${startTime}${endTime}${classInfo.name || ''}`;
+							if (beingSynced.includes(gcId)) {
+								console.log("skip", gcId);
+								return [];
+							}
+							return [{
+								startTime: startTime,
+								endTime: endTime,
+								location: classInfo.playgroundName || '',
+								title: classInfo.name || '',
+								content: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding: 10px;">\n                            <p style=\"margin: 0 0 8px 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("老师", "Teacher")}】 \n                                <span style=\"font-weight: normal;\">\n                                ${classInfo.teacherList.map(t => t.name).join(', ')}\n                                </span>\n                            </p>\n                            <p style=\"margin: 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("班级", "Class")}】\n                                <span style=\"font-weight: normal;\">\n                                ${tlang(classInfo.classInfo.className, classInfo.classInfo.classEName)}\n                                </span>\n                            </p>\n                            </div><p style="display:none" >gcMark{${gcId}}</p>`,
+								tag: 'GCalcAutoSync_Class'
+							}];
+						});
+						if(events.length<1){
+							resolve(syncResultDefault);
+							return;
+						}
+						console.log(events)
+						const batchRes = await T_batchAddToMSCalender(events, accessToken);
+						resolve({ amountOfSuccess: batchRes?.amountOfSuccess || 0, amountOfFailed: batchRes?.amountOfFailed || 0 });
+					} else {
+						console.log("请求失败:", response.status);
+						resolve(syncResultDefault);
+					}
+				} catch (error) {
+					console.error("请求错误:", error);
+					resolve(syncResultDefault);
+				}
+			});
+		});
+	});
+}
+
+async function T_addToMSCalendar(startTime, endTime, location, title, content, tag, accessToken,retry=0) {
+    console.log("________________addToMSCalendar",startTime, endTime, location, title, content, tag);
+    try {
+        const event = {
+            subject: title,
+            body: {
+            contentType: 'HTML',
+            content: content
+            },
+            start: {
+            dateTime: startTime,
+            timeZone: 'China Standard Time'
+            },
+            end: {
+            dateTime: endTime,
+            timeZone: 'China Standard Time'
+            },
+            location: {
+            displayName: location
+            },
+            categories: [tag]
+        };
+
+        const response = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(event)
+        });
+
+        const result = await response.json();
+        if(response.status === 201){
+            console.log(title, startTime, "Success"); 
+        } else {
+            console.log(title, startTime, "Failed, retrying");
+            setTimeout(() => {
+                T_addToMSCalendar(startTime, endTime, location, title, content, tag, accessToken, retry+1);
+            }, Math.floor(Math.random() * 991) + 10 + 500 * retry);
+        }
+        return result;
+    } catch (e) {
+        console.error("Error adding event to calendar:", e);
+    }
+  
+}
+
+function convertToMSDate(dotNetDateString) {
+  const match = /\/Date\((\d+)([+-]\d{4})\)\//.exec(dotNetDateString);
+  const timestamp = parseInt(match[1], 10);
+  const date = new Date(timestamp);
+  return date.toISOString();
+}
+
+function convertToXBDate(isoString) {
+  const date = new Date(isoString);
+  const timestamp = date.getTime();
+  const offset = '+0800';
+  return `/Date(${timestamp}${offset})/`;
+}
+
+
+async function T_removeFromMSCalendar(category) {
+    chrome.storage.local.get('MSaccessToken', async function(getResult){
+        const accessToken = getResult.MSaccessToken;
+        if(!getResult.MSaccessToken){
+            M_send_str_msg("tip_err", "没有访问令牌", 0);
+            console.log("没有访问令牌");
+            return -1;
+        }
+
+        console.log("________________removeFromMSCalendar",category);
+        let beingSynced = await getFromChromeStorage("MS_BeingSynced") || [];
+        beingSynced = beingSynced.filter(item => !item.startsWith(category));
+        saveToChromeStorage("MS_BeingSynced",beingSynced)
+
+        
+        const events = await fetchEventsWithCategory(category, accessToken);
+        console.log("________________removeFromMSCalendar",category,"events",events);
+        await batchDeleteEvents(events, accessToken);
+    });   
+}
+async function fetchEventsWithCategory(category, accessToken) {
+    const now = new Date().toISOString(); // Get the current date and time in ISO format
+    const url = `https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '${now}' and categories/any(c:c eq '${category}')&$top=1000`;
+    
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    const data = await response.json();
+    return data.value;
+}
+
+async function batchDeleteEvents(events, accessToken) {
+    // Microsoft Graph batch API 限制每次最多20个请求
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < events.length; i += BATCH_SIZE) {
+        const batch = events.slice(i, i + BATCH_SIZE);
+        const batchRequest = {
+            requests: batch.map((event, idx) => ({
+                id: String(idx + 1),
+                method: "DELETE",
+                url: `/me/events/${event.id}`
+            }))
+        };
+
+        const response = await fetch('https://graph.microsoft.com/v1.0/$batch', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(batchRequest)
+        });
+
+        if (!response.ok) {
+            console.error("Batch delete failed:", response.status, await response.text());
+        } else {
+            const result = await response.json();
+            console.log("Batch delete result:", result);
+        }
+    }
+}
+
+async function deleteEvents(events, accessToken) {
+    for (const event of events) {
+        const url = `https://graph.microsoft.com/v1.0/me/events/${event.id}`;
+        
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            console.error(`Error deleting event ${event.id}: ${response.statusText}`);
+        } else {
+            console.log(`Deleted event ${event.id}`);
+        }
+    }
+}
+
+async function getAccessToken() {
+  return new Promise((resolve, reject) => {
+    chrome.identity.getAuthToken({ interactive: true }, token => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve(token);
+      }
+    });
+  });
+}class ScoreData {
+  constructor() {
+    this.data = {
+      "data": { "evaluationProjectList": [] },
+      "msgCN": null, "msgEN": null, "state": 0, "msg": null
+    };
+  }
+
+  formDataJSON(name, score, totalscore, id, categoryEName, categoryName, proportion) {
+    const projectList = this.data.data.evaluationProjectList;
+    let targetCategory = projectList.find(p => p.evaluationProjectEName === categoryEName);
+
+    if (!targetCategory) {
+      const newProjectId = id || new Date().getTime(); // Use provided ID or generate one
+      targetCategory = {
+        "evaluationProjectName": categoryName, "evaluationProjectEName": categoryEName,
+        "proportion": proportion, "score": 0, "scoreStr": "", "scoreLevel": "", "gpa": 0,
+        "gpaStr": "", "scoreIsNull": true, "evaluationProjectList": [], "levelString": "",
+        "code": `code-${newProjectId}`, "evaluationProjectId": newProjectId,
+        "proPath": `${newProjectId},`, "parentProId": 0, "evaluationProjectRemark": null,
+        "learningTaskAndExamList": []
+      };
+      projectList.push(targetCategory);
+    }
+
+    // Protection logic: if score > totalScore, cap the score to totalScore
+    const adjustedScore = Math.min(score, totalscore);
+    if (score > totalscore) {
+      console.warn(`⚠️ Score protection: Assignment "${name}" has score ${score} > totalScore ${totalscore}. Adjusted to ${adjustedScore}.`);
+    }
+
+    const newLearningTask = {
+      "id": id, "evaluationProjectId": targetCategory.evaluationProjectId,
+      "proPath": targetCategory.proPath, "type": 2, "score": adjustedScore, "levelString": "",
+      "studentInfoId": 2432662, "disciplineState": null, "classSubjectId": 1575677,
+      "name": name, "date": `/Date(${new Date().getTime()}+0800)/`, "totalScore": totalscore,
+      "scoreType": 1, "resultType": 0
+    };
+    
+    // Prevent adding duplicate tasks if the function is run multiple times
+    if (!targetCategory.learningTaskAndExamList.some(task => task.id === id)) {
+      targetCategory.learningTaskAndExamList.push(newLearningTask);
+    }
+
+    const totalScoreOfTasks = targetCategory.learningTaskAndExamList.reduce((sum, task) => sum + (task.score/task.totalScore)*100, 0);
+    const averageScore = totalScoreOfTasks / targetCategory.learningTaskAndExamList.length;
+    targetCategory.score = parseFloat(averageScore.toFixed(2));
+    targetCategory.scoreIsNull = false;
+  }
+
+  formDataJSONNested(name, score, totalscore, id, parentCategoryEName, parentCategoryName, parentProportion, childCategoryEName, childCategoryName, childProportion) {
+    const projectList = this.data.data.evaluationProjectList;
+    
+    // Find or create parent category
+    let parentCategory = projectList.find(p => p.evaluationProjectEName === parentCategoryEName);
+    if (!parentCategory) {
+      const newParentId = new Date().getTime();
+      parentCategory = {
+        "evaluationProjectName": parentCategoryName, "evaluationProjectEName": parentCategoryEName,
+        "proportion": parentProportion, "score": 0, "scoreStr": "", "scoreLevel": "", "gpa": 0,
+        "gpaStr": "", "scoreIsNull": true, "evaluationProjectList": [], "levelString": "",
+        "code": `code-${newParentId}`, "evaluationProjectId": newParentId,
+        "proPath": `${newParentId},`, "parentProId": 0, "evaluationProjectRemark": null,
+        "learningTaskAndExamList": []
+      };
+      projectList.push(parentCategory);
+    }
+
+    // Find or create child category within parent
+    let childCategory = parentCategory.evaluationProjectList.find(p => p.evaluationProjectEName === childCategoryEName);
+    if (!childCategory) {
+      const newChildId = new Date().getTime() + 1;
+      childCategory = {
+        "evaluationProjectName": childCategoryName, "evaluationProjectEName": childCategoryEName,
+        "proportion": childProportion, "score": 0, "scoreStr": "", "scoreLevel": "", "gpa": 0,
+        "gpaStr": "", "scoreIsNull": true, "evaluationProjectList": [], "levelString": "",
+        "code": `code-${newChildId}`, "evaluationProjectId": newChildId,
+        "proPath": `${parentCategory.evaluationProjectId},${newChildId},`, "parentProId": parentCategory.evaluationProjectId, 
+        "evaluationProjectRemark": null, "learningTaskAndExamList": []
+      };
+      parentCategory.evaluationProjectList.push(childCategory);
+    }
+
+    // Protection logic: if score > totalScore, cap the score to totalScore
+    const adjustedScore = Math.min(score, totalscore);
+    if (score > totalscore) {
+      console.warn(`⚠️ Score protection: Assignment "${name}" has score ${score} > totalScore ${totalscore}. Adjusted to ${adjustedScore}.`);
+    }
+
+    const newLearningTask = {
+      "id": id, "evaluationProjectId": childCategory.evaluationProjectId,
+      "proPath": childCategory.proPath, "type": 2, "score": adjustedScore, "levelString": "",
+      "studentInfoId": 2432662, "disciplineState": null, "classSubjectId": 1575677,
+      "name": name, "date": `/Date(${new Date().getTime()}+0800)/`, "totalScore": totalscore,
+      "scoreType": 1, "resultType": 0
+    };
+    
+    // Prevent adding duplicate tasks if the function is run multiple times
+    if (!childCategory.learningTaskAndExamList.some(task => task.id === id)) {
+      childCategory.learningTaskAndExamList.push(newLearningTask);
+    }
+
+    // Calculate child category score
+    const totalScoreOfTasks = childCategory.learningTaskAndExamList.reduce((sum, task) => sum + (task.score/task.totalScore)*100, 0);
+    const averageScore = totalScoreOfTasks / childCategory.learningTaskAndExamList.length;
+    childCategory.score = parseFloat(averageScore.toFixed(2));
+    childCategory.scoreIsNull = false;
+
+    // Calculate parent category score based on children
+    if (parentCategory.evaluationProjectList.length > 0) {
+      const totalChildScore = parentCategory.evaluationProjectList.reduce((sum, child) => {
+        if (!child.scoreIsNull && child.proportion > 0) {
+          return sum + (child.score * child.proportion);
+        }
+        return sum;
+      }, 0);
+      const totalChildProportion = parentCategory.evaluationProjectList.reduce((sum, child) => {
+        if (!child.scoreIsNull && child.proportion > 0) {
+          return sum + child.proportion;
+        }
+        return sum;
+      }, 0);
+      
+      if (totalChildProportion > 0) {
+        parentCategory.score = parseFloat((totalChildScore / totalChildProportion).toFixed(2));
+        parentCategory.scoreIsNull = false;
+      }
+    }
+  }
+
+  getFinalObject() {
+    return this.data;
+  }
+}
+
+
+
+
+
+/**
+ * Fetches all assignments AND exams for a subject, calculates the final weighted score,
+ * and returns a detailed breakdown.
+ *
+ * @param {number} schoolSemesterId - The ID for the school semester.
+ * @param {number} subjectId - The ID for the subject.
+ * @param {string} beginDate - The start date in 'YYYY-MM-DD' format.
+ * @param {string} endDate - The end date in 'YYYY-MM-DD' format.
+ * @returns {Promise<object|null>} A Promise resolving to an object with the final score, or null on error.
+ */
+async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,classId) {
+  const scoreDataManager = new ScoreData();
+
+  // Helper function to fetch assignments
+  const _fetchAssignments = async () => {
+    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetStatistics?schoolSemesterId=${schoolSemesterId}&subjectId=${subjectId}&learningTaskTypeId=null&beginDate=${beginDate}&endDate=${endDate}&page.pageIndex=1&page.pageSize=500&gcalcSysFetch`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch assignments: ${response.statusText}`);
+    const listData = await response.json();
+    if (!listData?.data?.list) return;
+
+    for (const assignment of listData.data.list) {
+      const detailUrl = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${assignment.id}&gcalcSysFetch`;
+      const detailResponse = await fetch(detailUrl);
+      if (!detailResponse.ok) continue;
+      const detailData = await detailResponse.json();
+      const { data } = detailData;
+      if (!data?.isInSubjectScore || !data.evaProjects || data.evaProjects.length === 0) continue;
+      
+      // Handle 2-layer evaProjects hierarchy
+      for (const evaProject of data.evaProjects) {
+        if (evaProject.proportion === 0 || evaProject.proportion === null || evaProject.proportion === undefined) continue;
+        
+        // Check if this is a nested project (has parentProId > 0)
+        if (evaProject.parentProId > 0) {
+          // This is a child project, find its parent
+          const parentProject = data.evaProjects.find(p => p.id === evaProject.parentProId);
+          if (parentProject) {
+            // Add to nested structure: parent -> child
+            scoreDataManager.formDataJSONNested(
+              data.learningTaskName, 
+              data.score, 
+              data.totalScore, 
+              data.id,
+              parentProject.eName, 
+              parentProject.name, 
+              parentProject.proportion,
+              evaProject.eName, 
+              evaProject.name, 
+              evaProject.proportion
+            );
+          }
+        } else {
+          // This is a top-level project
+          scoreDataManager.formDataJSON(data.learningTaskName, data.score, data.totalScore, data.id, evaProject.eName, evaProject.name, evaProject.proportion);
+        }
+      }
+    }
+  };
+
+  // Helper function to fetch exams
+  const _fetchExams = async () => {
+    const url = `https://tsinglanstudent.schoolis.cn/api/Exam/GetList?semesterId=${schoolSemesterId}&subjectId=null&typeId=null&key=&beginTime=${beginDate}&endTime=${endDate}&pageIndex=1&pageSize=12&gcalcSysFetch`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch exams: ${response.statusText}`);
+    const listData = await response.json();
+    if (!listData?.data?.list) return;
+
+    const relevantExams = listData.data.list.filter(exam => exam.subjects.some(s => s.subjectId === subjectId));
+    
+    for (const exam of relevantExams) {
+        const detailUrl = `https://tsinglanstudent.schoolis.cn/api/Exam/GetDetail?examId=${exam.id}&gcalcSysFetch`;
+        const detailResponse = await fetch(detailUrl);
+        if(!detailResponse.ok) continue;
+        const detailData = await detailResponse.json();
+        const subjectScoreInfo = detailData.data.subjectScoreList.find(s => s.subjectId === subjectId);
+        
+        if(subjectScoreInfo && subjectScoreInfo.isInSubjectScore){
+            // For exams, we currently only support single-layer evaluation projects
+            // as the exam data structure doesn't seem to support nested categories
+            scoreDataManager.formDataJSON(
+                detailData.data.examName,
+                subjectScoreInfo.score,
+                100, // Default totalScore = 100 for final
+                exam.id,
+                subjectScoreInfo.evaluationProjectEName,
+                subjectScoreInfo.evaluationProjectName,
+                subjectScoreInfo.proportion
+            );
+        }
+    }
+  };
+  
+  console.log(`🚀 Fetching grades for Subject ID: ${subjectId}...`);
+  try {
+    // Run both fetching processes in parallel
+    await Promise.all([_fetchAssignments(), _fetchExams()]);
+
+    // --- Final Weighted Calculation ---
+    const gradeDetails = scoreDataManager.getFinalObject();
+    let weightedTotal = 0;
+    let totalProportion = 0;
+
+    gradeDetails.data.evaluationProjectList.forEach(project => {
+        if (project.proportion > 0 && !project.scoreIsNull) {
+            weightedTotal += project.score * project.proportion;
+            totalProportion += project.proportion;
+        }
+    });
+
+    const finalWeightedScore = totalProportion > 0 ? parseFloat((weightedTotal / totalProportion).toFixed(2)) : 0;
+    
+    console.log(`🎉 Processing complete!`);
+    saveToChromeStorage(`GCV1GradeDetails|${schoolSemesterId}|${subjectId}`, gradeDetails);
+    //redirect
+
+    const redirectRule = {
+        id: classId-schoolSemesterId,
+        priority: 1,
+        action: {
+            type: "redirect",
+            redirect: {
+                url: `data:application/json,${encodeURIComponent(JSON.stringify(gradeDetails))}`
+
+            }
+        },
+        condition: {
+            resourceTypes: ["xmlhttprequest"],
+            urlFilter: `classId=${classId}&subjectId=${subjectId}&semesterId=${schoolSemesterId}`
+        }
+    };
+
+    chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [classId-schoolSemesterId],
+        addRules: [redirectRule]
+    });
+    return {
+      finalWeightedScore: finalWeightedScore,
+      totalProportionCovered: totalProportion,
+      gradeDetails: gradeDetails
+    };
+
+  } catch (error) {
+    console.error("An error occurred during the getSubjectGrades process:", error);
+    return null;
+  }
+}
+
+async function T_startCalenderSync() {
+	const res = await T_SyncToTeamsCalender();
+	const payload = {
+		amountOfSuccess: res?.amountOfSuccess || 0,
+		amountOfFailed: res?.amountOfFailed || 0,
+		lastSyncTime: new Date().toISOString()
+	};
+	await saveToChromeStorage("MS_LastSync_Calender", payload);
+    M_send_str_msg("MS_RefreshSyncPanels",1,-1)
+	return payload;
+}
+
+async function T_startTeamsTaskSync() {
+    M_send_str_msg("MSPanel_showSyncing",2,-1);
+    T_fetchTeamsUserClassesAndAssignments();
+    await delay(5000);
+	const res = await T_SetAssignmentAlert_MSAssignment();  
+	const payload = {
+		lastSyncTime: new Date().toISOString()
+	};
+	await saveToChromeStorage("MS_LastSync_TeamsTask", payload);
+    M_send_str_msg("MS_RefreshSyncPanels",2,-1)
+	return payload;
+}
+
+
+async function T_startXBTaskSync() {
+    M_send_str_msg("MSPanel_showSyncing",3,-1);
+    await delay(500);
+	const res = await T_SetAssignmentAlert_XBAssignment();  
+	const payload = {
+		lastSyncTime: new Date().toISOString()
+	};
+	await saveToChromeStorage("MS_LastSync_XBTask", payload);
+    M_send_str_msg("MS_RefreshSyncPanels",3 ,-1)
+	return payload;
+}
+
+async function T_checkCalenderSync() {
+	// Read configured period from settings
+	const settings = await getFromChromeStorage("MSFeaturesSettings");
+	const configuredPeriod = settings?.CalenderSyncPeriod ?? "1 Day";
+	const PERIODS_MS = {
+		"1 Hour": 60 * 60 * 1000,
+		"1 Day": 24 * 60 * 60 * 1000,
+		"2 Days": 2 * 24 * 60 * 60 * 1000,
+		"5 Days": 5 * 24 * 60 * 60 * 1000,
+		"1 Week": 7 * 24 * 60 * 60 * 1000,
+        "disabled": 3650 * 24 * 60 * 60 * 1000
+	};
+	const DEFAULT_PERIOD_MS = PERIODS_MS["1day"];
+	const selectedPeriodMs = PERIODS_MS[configuredPeriod] ?? DEFAULT_PERIOD_MS;
+
+	// Get last sync info
+	const last = await getFromChromeStorage("MS_LastSync_Calender");
+	const now = Date.now();
+
+	// If never synced or missing timestamp, trigger a sync
+	if (!last || !last.lastSyncTime) {
+		const result = await T_startCalenderSync();
+		return { triggered: true, reason: "no_previous_sync", result };
+	}
+
+	let lastTime = Date.parse(last.lastSyncTime);
+	if (Number.isNaN(lastTime)) {
+		const result = await T_startCalenderSync();
+		return { triggered: true, reason: "invalid_last_time", result };
+	}
+
+	// If previous sync had failures, reduce period to 20 minutes
+	const FAILURE_PERIOD_MS = 20 * 60 * 1000;
+	const hadFailures = (last?.amountOfFailed ?? 0) > 0;
+	const effectivePeriodMs = hadFailures ? Math.min(selectedPeriodMs, FAILURE_PERIOD_MS) : selectedPeriodMs;
+
+	const elapsed = now - lastTime;
+	if (elapsed >= effectivePeriodMs) {
+		const result = await T_startCalenderSync();
+		return { triggered: true, reason: "period_elapsed", result };
+	}
+
+	return { triggered: false, reason: "not_due_yet", nextCheckInMs: effectivePeriodMs - elapsed };
+}
+
+
+async function T_checkTeamsTaskSync() {
+	// Read configured period from settings
+	const settings = await getFromChromeStorage("MSFeaturesSettings");
+	const configuredPeriod = settings?.TeamsTaskSyncPeriod ?? "1 Day";
+	const PERIODS_MS = {
+		"1 Hour": 60 * 60 * 1000,
+		"1 Day": 24 * 60 * 60 * 1000,
+		"disabled": 3650 * 24 * 60 * 60 * 1000
+	};
+	const DEFAULT_PERIOD_MS = PERIODS_MS["1 Day"];
+	const selectedPeriodMs = PERIODS_MS[configuredPeriod] ?? DEFAULT_PERIOD_MS;
+
+	// Get last sync info
+	const last = await getFromChromeStorage("MS_LastSync_TeamsTask");
+	const now = Date.now();
+
+	// If never synced or missing timestamp, trigger a sync
+	if (!last || !last.lastSyncTime) {
+		const result = await T_startTeamsTaskSync()
+		return { triggered: true, reason: "no_previous_sync", result };
+	}
+
+	let lastTime = Date.parse(last.lastSyncTime);
+	if (Number.isNaN(lastTime)) {
+		const result = await T_startTeamsTaskSync()
+		return { triggered: true, reason: "invalid_last_time", result };
+	}
+
+	const elapsed = now - lastTime;
+	if (elapsed >= selectedPeriodMs) {
+		const result = await T_startTeamsTaskSync()
+		return { triggered: true, reason: "period_elapsed", result };
+	}
+
+	return { triggered: false, reason: "not_due_yet", nextCheckInMs: selectedPeriodMs - elapsed };
+}
+
+
+async function T_checkXBTaskSync() {
+	// Read configured period from settings
+	const settings = await getFromChromeStorage("MSFeaturesSettings");
+	const configuredPeriod = settings?.XBTaskSyncPeriod ?? "1 Day";
+	const PERIODS_MS = {
+		"1 Hour": 60 * 60 * 1000,
+		"1 Day": 24 * 60 * 60 * 1000,
+		"disabled": 3650 * 24 * 60 * 60 * 1000
+	};
+	const DEFAULT_PERIOD_MS = PERIODS_MS["1 Day"];
+	const selectedPeriodMs = PERIODS_MS[configuredPeriod] ?? DEFAULT_PERIOD_MS;
+
+	// Get last sync info
+	const last = await getFromChromeStorage("MS_LastSync_XBTask");
+	const now = Date.now();
+
+	// If never synced or missing timestamp, trigger a sync
+	if (!last || !last.lastSyncTime) {
+		const result = await T_startXBTaskSync()
+		return { triggered: true, reason: "no_previous_sync", result };
+	}
+
+	let lastTime = Date.parse(last.lastSyncTime);
+	if (Number.isNaN(lastTime)) {
+		const result = await T_startXBTaskSync()
+		return { triggered: true, reason: "invalid_last_time", result };
+	}
+
+	const elapsed = now - lastTime;
+	if (elapsed >= selectedPeriodMs) {
+		const result = await T_startXBTaskSync()
+		return { triggered: true, reason: "period_elapsed", result };
+	}
+
+	return { triggered: false, reason: "not_due_yet", nextCheckInMs: selectedPeriodMs - elapsed };
+}
