@@ -244,6 +244,7 @@ async function M_GetSettings() {
 
 async function InitGCalc() {
 
+    M_send_str_msg("bp-verNum", chrome.runtime.getManifest().version, 0);
 
     M_checkGPARules();
     M_clearCalcedData();

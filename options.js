@@ -512,7 +512,7 @@ function setLanguage() {
         } else if (agent.includes("chrome")) {
             mark = "c";
         }
-        document.getElementById("verNum").innerText += mark;
+        document.getElementById("verNum").innerText += chrome.runtime.getManifest().version + mark;
     })();
     var texts = {
         'en': {

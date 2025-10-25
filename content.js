@@ -1,3 +1,4 @@
+let version = "0.65";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -521,6 +522,8 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
                 MSShowSyncing(data.cont);
             } else if (type == "bp-logpageState"){
                 //换位置
+            }else if (type == "bp-verNum"){
+                version = data.cont;
             } else if (type == "bp-loggedin-frameEdit"){
                 insertCountdownBanner();
                 hideAssignments()
@@ -3804,6 +3807,10 @@ async function updateSyncPanels(panelId){
             lastSyncData = await getFromChromeStorage("MS_LastSync_XBTask")
             syncCont = "sync3Content"
             break;
+        case 4:
+            document.getElementById("sync4Title").innerText = "📃 问题及建议反馈"
+            document.getElementById("sync4Content").innerText = tlang("反馈问题或许愿新功能~","Feedback Issues or Wish for New Features~");
+            document.getElementById("sync4Content").style.cursor = "pointer";
     }
     if (lastSyncData==null){
         document.getElementById(syncCont).innerText = tlang("未同步","Not Synced");
@@ -3837,6 +3844,7 @@ function startTeamsPanel(tasks){
     console.log("startTeamsPanel",tasks);
     let assignmentsData = [];
     
+    updateSyncPanels(4);    
     updateSyncPanels(3);    
     updateSyncPanels(2);
     updateSyncPanels(1);
@@ -4080,6 +4088,7 @@ function startTeamsPanel(tasks){
     addSyncBoxListener("sync-box-1", 4);
     addSyncBoxListener("sync-box-2", 5);
     addSyncBoxListener("sync-box-3", 6);
+    addSyncBoxListener("sync-box-4", 7);
     document.querySelectorAll('.sync-box:not(.coming-soon):not(#sync-box-1):not(#sync-box-2)').forEach(box => {
         box.addEventListener('click', function() {
             return;
@@ -4385,12 +4394,20 @@ function createPopup(type, data = {}) {
                     saveToChromeStorage("MSFeaturesSettings",originalSettings);
                 })
             });
+        }else if (type === 7){ 
+            body.innerHTML = `
+                <div class="settings-title">${tlang("在Forms中填写","Feedback & Suggestion")}</div>
+                <iframe width="700px" height="480px" src="https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=KpEicl1DO0KyK3S5CcO_izimwdzN4nREuVb2RzJ5VJRURE1PQ0NCV1YxWjRFWThHMkhJSllLQ09XMy4u&rc67cae315b83410aacea03731033238f=${"Giaoculator S - V"+version + (navigator.userAgent.toLowerCase().includes('edg') ? 'e' : 'c')}&embed=true" frameborder="0" marginwidth="0" marginheight="0" scrolling="no" style=" border: none; border-radius: 16px; overflow: hidden; max-width: 100%; max-height: 100vh; box-shadow: 0 4px 12px rgba(0,0,0,0.15); " allowfullscreen webkitallowfullscreen mozallowfullscreen msallowfullscreen> </iframe>
+            `;
+            modal.appendChild(body); 
         }
     }
     
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-
+    if(type == 7 ){
+        document.getElementsByClassName("custom-modal")[0].style.maxWidth="700px"
+    }
     handleGCPopupClick = handleGCPopupClick.bind(this);
     overlay.addEventListener('click', handleGCPopupClick);  
     
