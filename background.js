@@ -138,6 +138,7 @@ async function saveToChromeStorage(keyName, obj) {
     } catch (error) {
         console.error('Error saving to chrome.storage:', error);
         M_send_comp_msg("calcErrorStop", null, 0);
+        
         M_send_comp_msg("tip_err", error, 0);
         //err
     }
