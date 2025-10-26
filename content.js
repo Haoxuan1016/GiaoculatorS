@@ -4431,7 +4431,7 @@ function createPopup(type, data = {}) {
         style.textContent = `
             ${localFontUrl ? `@font-face { font-family: 'Material Symbols Outlined Local'; font-style: normal; font-weight: 400; src: url('${localFontUrl}') format('truetype'); font-display: swap; }` : ''}
             .gc-carousel { position: relative; overflow: hidden; }
-            .gc-carousel .gc-carousel-arrow { color: #fff; background: rgba(0,0,0,0.45); transition: background-color .28s ease, box-shadow .28s ease, transform .28s ease; }
+            .gc-carousel .gc-carousel-arrow { color: #fff; background: rgba(0,0,0,0.45); transition: background-color .28s ease, box-shadow .28s ease, transform .28s ease; z-index: 3; }
             .gc-carousel .gc-carousel-arrow:hover { background: rgba(59,130,246,0.78); box-shadow: 0 12px 28px rgba(37,99,235,0.32); transform: translateY(-50%) scale(1.08); }
             .gc-carousel .gc-carousel-arrow:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(59,130,246,0.4); }
             .gc-carousel .gc-carousel-arrow.gc-press { animation: gc-carousel-press .42s ease; }
