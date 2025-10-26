@@ -4386,10 +4386,206 @@ function createPopup(type, data = {}) {
     closeBtn.innerHTML = '×';
     closeBtn.id = 'gc-popup-discard';
     closeBtn.onclick = () => removePopup(overlay);
-    
+
     header.appendChild(closeBtn);
     modal.appendChild(header);
-    
+
+    function ensurePopupCarouselStyles() {
+        if (document.getElementById('gc-popup-carousel-style')) return;
+        const style = document.createElement('style');
+        style.id = 'gc-popup-carousel-style';
+        const localFontUrl = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+            ? chrome.runtime.getURL('res/fonts/MaterialSymbolsOutlined.ttf')
+            : '';
+        style.textContent = `
+            ${localFontUrl ? `@font-face { font-family: 'Material Symbols Outlined Local'; font-style: normal; font-weight: 400; src: url('${localFontUrl}') format('truetype'); font-display: swap; }` : ''}
+            .gc-carousel { position: relative; overflow: hidden; }
+            .gc-carousel .gc-carousel-arrow { color: #fff; background: rgba(0,0,0,0.45); transition: background-color .28s ease, box-shadow .28s ease, transform .28s ease; }
+            .gc-carousel .gc-carousel-arrow:hover { background: rgba(59,130,246,0.78); box-shadow: 0 12px 28px rgba(37,99,235,0.32); transform: translateY(-50%) scale(1.08); }
+            .gc-carousel .gc-carousel-arrow:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(59,130,246,0.4); }
+            .gc-carousel .gc-carousel-arrow.gc-press { animation: gc-carousel-press .42s ease; }
+            .gc-carousel .gc-carousel-arrow .gc-carousel-icon { font-family: 'Material Symbols Outlined Local', 'Material Symbols Outlined', 'Material Icons Outlined', sans-serif; font-weight: normal; font-style: normal; font-size: 26px; line-height: 1; letter-spacing: normal; pointer-events: none; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; display: inline-flex; align-items: center; justify-content: center; }
+            .gc-carousel .gc-img-wrap { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+            .gc-carousel .gc-carousel-image { transition: transform .45s ease, opacity .45s ease; }
+            .gc-carousel:hover .gc-carousel-image:not(.gc-sliding) { transform: scale(1.02); }
+            .gc-carousel .gc-carousel-image.gc-slide-from-left { animation: gc-carousel-slide-in-left .45s ease both; }
+            .gc-carousel .gc-carousel-image.gc-slide-from-right { animation: gc-carousel-slide-in-right .45s ease both; }
+            .gc-carousel .gc-carousel-caption { position: absolute; bottom: 18px; left: 50%; transform: translate(-50%, 0); padding: 6px 14px; border-radius: 999px; background: rgba(17,25,40,0.35); color: #fff; font-size: 0.95rem; line-height: 1.25; pointer-events: none; display: none; max-width: calc(100% - 56px); box-shadow: 0 8px 18px rgba(15,23,42,0.14); backdrop-filter: blur(6px); }
+            .gc-carousel .gc-carousel-caption.gc-caption-show { display: inline-flex; justify-content: center; text-align: center; }
+            .gc-carousel .gc-carousel-caption.gc-caption-left { animation: gc-carousel-caption-left .38s ease both; }
+            .gc-carousel .gc-carousel-caption.gc-caption-right { animation: gc-carousel-caption-right .38s ease both; }
+            .gc-carousel-dots { gap: 6px; }
+            .gc-carousel-dots .gc-carousel-dot { width: 9px; height: 9px; border-radius: 999px; background: rgba(255,255,255,0.65); display: inline-block; cursor: pointer; transition: transform .28s ease, background-color .28s ease; }
+            .gc-carousel-dots .gc-carousel-dot.active { background: #2563eb; transform: scale(1.2); }
+            @keyframes gc-carousel-slide-in-left { from { opacity: 0; transform: translateX(-18px) scale(.98); } to { opacity: 1; transform: translateX(0) scale(1); } }
+            @keyframes gc-carousel-slide-in-right { from { opacity: 0; transform: translateX(18px) scale(.98); } to { opacity: 1; transform: translateX(0) scale(1); } }
+            @keyframes gc-carousel-caption-left { from { opacity: 0; transform: translate(-58%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+            @keyframes gc-carousel-caption-right { from { opacity: 0; transform: translate(-42%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+            @keyframes gc-carousel-press { 0% { transform: translateY(-50%) scale(1); } 50% { transform: translateY(-50%) scale(0.94); } 100% { transform: translateY(-50%) scale(1); } }
+        `;
+        try { document.head.appendChild(style); } catch (e) {}
+    }
+
+    function setupPopupCarousel(container, config = {}) {
+        ensurePopupCarouselStyles();
+        if (!container) return;
+        const images = Array.isArray(config.images) ? config.images : [];
+        const texts = Array.isArray(config.texts) ? config.texts : [];
+        let idx = typeof config.initialIndex === 'number' ? Math.max(0, Math.min(config.initialIndex, images.length ? images.length - 1 : 0)) : 0;
+        const imgEl = container.querySelector('.gc-carousel-image');
+        const emptyEl = container.querySelector('.gc-carousel-empty');
+        const dotsEl = container.querySelector('.gc-carousel-dots');
+        const leftBtn = container.querySelector('.gc-left');
+        const rightBtn = container.querySelector('.gc-right');
+        const captionEl = container.querySelector('.gc-carousel-caption') || (() => {
+            const caption = document.createElement('div');
+            caption.className = 'gc-carousel-caption';
+            container.appendChild(caption);
+            return caption;
+        })();
+
+        (function ensureEnhancedImage() {
+            if (!imgEl) return;
+            if (!container.querySelector('.gc-img-wrap')) {
+                const wrap = document.createElement('div');
+                wrap.className = 'gc-img-wrap';
+                wrap.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;';
+                const blur = document.createElement('div');
+                blur.className = 'gc-img-blur';
+                blur.style.cssText = 'position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(16px);transform:scale(1.08);opacity:.45;border-radius:12px;';
+                imgEl.parentNode.insertBefore(wrap, imgEl);
+                wrap.appendChild(blur);
+                wrap.appendChild(imgEl);
+            }
+        })();
+
+        const blurEl = container.querySelector('.gc-img-blur');
+
+        if (imgEl) {
+            imgEl.addEventListener('animationend', (event) => {
+                if (event.animationName === 'gc-carousel-slide-in-left' || event.animationName === 'gc-carousel-slide-in-right') {
+                    imgEl.classList.remove('gc-slide-from-left', 'gc-slide-from-right', 'gc-sliding');
+                }
+            });
+        }
+
+        function animateButton(btn) {
+            if (!btn) return;
+            btn.classList.remove('gc-press');
+            void btn.offsetWidth;
+            btn.classList.add('gc-press');
+        }
+
+        function update(direction) {
+            const hasImages = images.length > 0;
+            if (imgEl) {
+                imgEl.style.display = hasImages ? 'block' : 'none';
+            }
+            if (emptyEl) {
+                emptyEl.style.display = hasImages ? 'none' : 'block';
+            }
+            if (!hasImages) {
+                if (blurEl) blurEl.style.backgroundImage = '';
+                if (imgEl) imgEl.removeAttribute('src');
+                if (dotsEl) dotsEl.innerHTML = '';
+                if (captionEl) captionEl.style.display = 'none';
+                if (leftBtn) leftBtn.style.display = 'none';
+                if (rightBtn) rightBtn.style.display = 'none';
+                return;
+            }
+
+            const src = images[idx];
+            if (imgEl) {
+                if (direction) {
+                    imgEl.classList.remove('gc-slide-from-left', 'gc-slide-from-right', 'gc-sliding');
+                    void imgEl.offsetWidth;
+                    imgEl.classList.add(direction === 'left' ? 'gc-slide-from-left' : 'gc-slide-from-right');
+                    imgEl.classList.add('gc-sliding');
+                }
+                imgEl.src = src;
+            }
+            if (blurEl) {
+                blurEl.style.backgroundImage = src ? `url("${src}")` : '';
+            }
+
+            const textContent = (texts[idx] || '').toString().trim();
+            if (captionEl) {
+                captionEl.classList.remove('gc-caption-left', 'gc-caption-right', 'gc-caption-show');
+                if (textContent) {
+                    captionEl.textContent = textContent;
+                    captionEl.style.display = 'inline-flex';
+                    void captionEl.offsetWidth;
+                    if (direction === 'left') {
+                        captionEl.classList.add('gc-caption-left');
+                    } else if (direction === 'right') {
+                        captionEl.classList.add('gc-caption-right');
+                    }
+                    captionEl.classList.add('gc-caption-show');
+                } else {
+                    captionEl.style.display = 'none';
+                }
+            }
+
+            if (dotsEl) {
+                dotsEl.innerHTML = '';
+                images.forEach((_, i) => {
+                    const dot = document.createElement('span');
+                    dot.className = 'gc-carousel-dot' + (i === idx ? ' active' : '');
+                    dot.setAttribute('data-idx', i);
+                    dotsEl.appendChild(dot);
+                });
+            }
+
+            if (leftBtn) leftBtn.style.display = images.length > 1 ? 'flex' : 'none';
+            if (rightBtn) rightBtn.style.display = images.length > 1 ? 'flex' : 'none';
+        }
+
+        if (dotsEl) {
+            dotsEl.addEventListener('click', (e) => {
+                const target = e.target;
+                const value = target && target.getAttribute ? target.getAttribute('data-idx') : null;
+                if (value == null) return;
+                const nextIdx = parseInt(value, 10);
+                if (Number.isNaN(nextIdx) || nextIdx === idx) return;
+                const direction = nextIdx > idx ? 'right' : 'left';
+                idx = nextIdx;
+                update(direction);
+            });
+        }
+
+        if (leftBtn) {
+            leftBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!images.length) return;
+                animateButton(leftBtn);
+                idx = (idx - 1 + images.length) % images.length;
+                update('left');
+            });
+            leftBtn.addEventListener('animationend', (event) => {
+                if (event.animationName === 'gc-carousel-press') {
+                    leftBtn.classList.remove('gc-press');
+                }
+            });
+        }
+
+        if (rightBtn) {
+            rightBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!images.length) return;
+                animateButton(rightBtn);
+                idx = (idx + 1) % images.length;
+                update('right');
+            });
+            rightBtn.addEventListener('animationend', (event) => {
+                if (event.animationName === 'gc-carousel-press') {
+                    rightBtn.classList.remove('gc-press');
+                }
+            });
+        }
+
+        update();
+    }
+
     // Build content based on type
     if (type !== 3) {
         const body = document.createElement('div'); 
@@ -4560,146 +4756,60 @@ function createPopup(type, data = {}) {
         body.className = 'custom-modal-body';
         const images = Array.isArray(data.images) ? data.images : [];
         const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
+        ensurePopupCarouselStyles();
         body.innerHTML = `
             <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:200px;max-height:320px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
-                <button class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">‹</button>
-                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:300px;object-fit:contain;display:${images.length? 'block':'none'};" />
+                <button type="button" class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                    <span class="gc-carousel-icon material-symbols-outlined">chevron_left</span>
+                </button>
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:300px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.25);position:relative;z-index:1;" />
                 <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
-                <button class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">›</button>
-                <div class="gc-carousel-dots" style="position:absolute;bottom:10px;left:0;right:0;display:flex;gap:6px;align-items:center;justify-content:center;"></div>
+                <button type="button" class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                    <span class="gc-carousel-icon material-symbols-outlined">chevron_right</span>
+                </button>
+                <div class="gc-carousel-caption" style="display:none;"></div>
+                <div class="gc-carousel-dots" style="position:absolute;bottom:10px;left:0;right:0;display:flex;align-items:center;justify-content:center;"></div>
             </div>
         `;
         modal.appendChild(body);
-        (function setupCarousel(container){
-            const imgEl = container.querySelector('.gc-carousel-image');
-            const dotsEl = container.querySelector('.gc-carousel-dots');
-            const left = container.querySelector('.gc-left');
-            const right = container.querySelector('.gc-right');
-            // Create image wrapper + blur layer and caption if absent
-            (function ensureEnhancedImage(){
-                if (!container.querySelector('.gc-img-wrap') && imgEl) {
-                    const wrap = document.createElement('div');
-                    wrap.className = 'gc-img-wrap';
-                    wrap.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;';
-                    const blur = document.createElement('div');
-                    blur.className = 'gc-img-blur';
-                    blur.style.cssText = 'position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(16px);transform:scale(1.08);opacity:.45;border-radius:12px;';
-                    // Insert wrapper before image and move image inside
-                    imgEl.parentNode.insertBefore(wrap, imgEl);
-                    wrap.appendChild(blur);
-                    wrap.appendChild(imgEl);
-                    // Beautify image itself
-                    try { imgEl.style.borderRadius = '12px'; imgEl.style.boxShadow = '0 10px 28px rgba(0,0,0,.25)'; imgEl.style.position = 'relative'; imgEl.style.zIndex = '1'; } catch(e){}
-                }
-                if (!container.querySelector('.gc-carousel-caption')) {
-                    const cap = document.createElement('div');
-                    cap.className = 'gc-carousel-caption';
-                    cap.style.cssText = 'position:absolute;left:12px;right:12px;bottom:38px;text-align:center;z-index:2;color:#fff;font-size:0.95rem;line-height:1.2;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.45);box-shadow:0 4px 14px rgba(0,0,0,.25);backdrop-filter:blur(8px);display:none;pointer-events:none;';
-                    container.appendChild(cap);
-                }
-            })();
-            const blurEl = container.querySelector('.gc-img-blur');
-            const captionEl = container.querySelector('.gc-carousel-caption');
-            const texts = Array.isArray(data.text) ? data.text : [];
-            let idx = initialIndex;
-            function render(){
-                if(!images.length) return;
-                const src = images[idx];
-                imgEl.src = src;
-                if (blurEl) blurEl.style.backgroundImage = src ? `url("${src}")` : '';
-                const t = (texts[idx] || '').toString();
-                const trimmed = t.length > 15 ? (t.slice(0,15) + '…') : t;
-                if (captionEl) { captionEl.textContent = trimmed; captionEl.style.display = trimmed ? 'block' : 'none'; }
-                dotsEl.innerHTML = '';
-                for(let i=0;i<images.length;i++){
-                    const dot = document.createElement('span');
-                    dot.style.cssText = 'width:9px;height:9px;border-radius:50%;background:' + (i===idx?'#333':'#bbb') + ';display:inline-block;cursor:pointer;';
-                    dot.setAttribute('data-idx', i);
-                    dotsEl.appendChild(dot);
-                }
-                if(left) left.style.display = images.length>1 ? 'flex' : 'none';
-                if(right) right.style.display = images.length>1 ? 'flex' : 'none';
-            }
-            if(left) left.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx - 1 + images.length) % images.length; render(); });
-            if(right) right.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx + 1) % images.length; render(); });
-            dotsEl.addEventListener('click', (e)=>{ const t=e.target; const v=t && t.getAttribute && t.getAttribute('data-idx'); if(v!=null){ idx = parseInt(v,10)||0; render(); } });
-            render();
-        })(body.querySelector('.gc-carousel'));
+        setupPopupCarousel(body.querySelector('.gc-carousel'), {
+            images,
+            texts: data.text,
+            initialIndex
+        });
     } else if (type === 1) {
         // Override layout for type 1: top-right header + image carousel in the middle
         const body = modal.querySelector('.custom-modal-body') || (()=>{ const b=document.createElement('div'); b.className='custom-modal-body'; modal.appendChild(b); return b; })();
         const images = Array.isArray(data.images) ? data.images : [];
         const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
+        ensurePopupCarouselStyles();
         body.innerHTML = `
             <div class="gc-type1-top" style="display:flex;justify-content:flex-start;align-items:center;gap: 10px;margin:0;padding-bottom: 13px;">
             <img src="chrome-extension://gohdhhoiemjlgioonlfhdihlncinnmjc/res/msteamsLogo.svg" style="height:30px;vertical-align:middle;">
             <div class="modal-text" style="font-weight:500;margin-bottom:0px">未绑定Teams或校宝账号不匹配</div>
             </div>
             <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:180px;max-height:260px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
-                <button class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">‹</button>
-                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};" />
+                <button type="button" class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                    <span class="gc-carousel-icon material-symbols-outlined">chevron_left</span>
+                </button>
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.24);position:relative;z-index:1;" />
                 <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
-                <button class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">›</button>
-                <div class="gc-carousel-dots" style="position:absolute;bottom:8px;left:0;right:0;display:flex;gap:6px;align-items:center;justify-content:center;"></div>
+                <button type="button" class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                    <span class="gc-carousel-icon material-symbols-outlined">chevron_right</span>
+                </button>
+                <div class="gc-carousel-caption" style="display:none;"></div>
+                <div class="gc-carousel-dots" style="position:absolute;bottom:8px;left:0;right:0;display:flex;align-items:center;justify-content:center;"></div>
             </div>
             <div class="custom-modal-footer" style="margin-top:14px;">
                 <button class="custom-btn btn-secondary" id="gc-popup-discard">${tlang("取消","Discard")}</button>
                 <button class="custom-btn btn-primary" id="gc-popup-settings-MS">${tlang("前往设置","Go to Settings")}</button>
             </div>
         `;
-        (function setupCarousel(container){
-            const imgEl = container.querySelector('.gc-carousel-image');
-            const dotsEl = container.querySelector('.gc-carousel-dots');
-            const left = container.querySelector('.gc-left');
-            const right = container.querySelector('.gc-right');
-            // Create image wrapper + blur layer and caption if absent
-            (function ensureEnhancedImage(){
-                if (!container.querySelector('.gc-img-wrap') && imgEl) {
-                    const wrap = document.createElement('div');
-                    wrap.className = 'gc-img-wrap';
-                    wrap.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;';
-                    const blur = document.createElement('div');
-                    blur.className = 'gc-img-blur';
-                    blur.style.cssText = 'position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(14px);transform:scale(1.08);opacity:.45;border-radius:12px;';
-                    imgEl.parentNode.insertBefore(wrap, imgEl);
-                    wrap.appendChild(blur);
-                    wrap.appendChild(imgEl);
-                    try { imgEl.style.borderRadius = '12px'; imgEl.style.boxShadow = '0 8px 24px rgba(0,0,0,.24)'; imgEl.style.position = 'relative'; imgEl.style.zIndex = '1'; } catch(e){}
-                }
-                if (!container.querySelector('.gc-carousel-caption')) {
-                    const cap = document.createElement('div');
-                    cap.className = 'gc-carousel-caption';
-                    cap.style.cssText = 'position:absolute;left:12px;right:12px;bottom:34px;text-align:center;z-index:2;color:#fff;font-size:0.93rem;line-height:1.2;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.45);box-shadow:0 4px 12px rgba(0,0,0,.25);backdrop-filter:blur(8px);display:none;pointer-events:none;';
-                    container.appendChild(cap);
-                }
-            })();
-            const blurEl = container.querySelector('.gc-img-blur');
-            const captionEl = container.querySelector('.gc-carousel-caption');
-            const texts = Array.isArray(data.text) ? data.text : [];
-            let idx = initialIndex;
-            function render(){
-                if(!images.length) return;
-                const src = images[idx];
-                imgEl.src = src;
-                if (blurEl) blurEl.style.backgroundImage = src ? `url("${src}")` : '';
-                const t = (texts[idx] || '').toString();
-                const trimmed = t.length > 15 ? (t.slice(0,15) + '…') : t;
-                if (captionEl) { captionEl.textContent = trimmed; captionEl.style.display = trimmed ? 'block' : 'none'; }
-                dotsEl.innerHTML = '';
-                for(let i=0;i<images.length;i++){
-                    const dot = document.createElement('span');
-                    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:' + (i===idx?'#333':'#bbb') + ';display:inline-block;cursor:pointer;';
-                    dot.setAttribute('data-idx', i);
-                    dotsEl.appendChild(dot);
-                }
-                if(left) left.style.display = images.length>1 ? 'flex' : 'none';
-                if(right) right.style.display = images.length>1 ? 'flex' : 'none';
-            }
-            if(left) left.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx - 1 + images.length) % images.length; render(); });
-            if(right) right.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx + 1) % images.length; render(); });
-            dotsEl.addEventListener('click', (e)=>{ const t=e.target; const v=t && t.getAttribute && t.getAttribute('data-idx'); if(v!=null){ idx = parseInt(v,10)||0; render(); } });
-            render();
-        })(body.querySelector('.gc-carousel'));
+        setupPopupCarousel(body.querySelector('.gc-carousel'), {
+            images,
+            texts: data.text,
+            initialIndex
+        });
     }
 
     overlay.appendChild(modal);
