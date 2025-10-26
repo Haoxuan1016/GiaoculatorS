@@ -1,4 +1,4 @@
-let version = "0.65";
+let version = "1.02";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -3746,11 +3746,40 @@ function showTeamsMainPannelBtn(){
                 getFromChromeStorage("MSFeatureEnabled").then(enabled=>{
                     if(enabled){
                         switchToTeamsPanel();
-                    }else{
-                        createPopup(1, {
-                             images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe380f76c5b70b2ff47522jFTDZVBX06']
-                             ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("同步课程表和任务截止日期到日历","Sync Teams calendar to Xiaobao schedule")] 
+                        setTimeout(() => {
+                            getFromChromeStorage("MSUserProfile").then(profile=>{
+                                if(profile?.showGuide){
+                                    createPopup(8, {
+                                        title: tlang("Teams Organizer入门：在Outlook®APP中查看课表和提醒","Getting Started with Teams Organizer: View Schedule and Reminders in Outlook® APP"),
+                                        images: ['https://x19.fp.ps.netease.com/file/68fe4597c4cdd10497fcea41ZYWVsWzo06','https://x19.fp.ps.netease.com/file/68fe45aa7e5097add65b0e28q7m4cHKa06','https://x19.fp.ps.netease.com/file/68fe45c173a867596657f0d3Y16tEhek06','https://x19.fp.ps.netease.com/file/68fe4ac9b9670ef5ddd86eb0QYaC9S5E06'],
+                                        text:[tlang("同步的日程会出现在对应Teams账号中","Synced schedules will appear in the corresponding Teams account"),tlang("如需添加小组件 下载Outlook® APP并登录","Download Outlook® APP and login to use small widgets"),tlang("可添加Outlook小组件在桌面或锁屏界面","Add Outlook widgets to desktop or lock screen"),tlang("无需手动操作：登录校宝，系统自动同步","Auto Sync: Login Schoolis , Sync as Schedule")]
+                                    });
+                                }
+                                saveToChromeStorage("MSUserProfile",{...profile,showGuide:false});
                             });
+                            
+                        }, 1800);
+                    }else{
+                        try {
+                            getFromChromeStorage("MSUserProfile").then(profile=>{
+                                if(profile?.showGuide){
+                                    createPopup(2,{text:tlang(`绑定成功，请使用【${profile?.xbAccount}】重新登录校宝系统以启用Teams Organizer功能`,`Re-login to Schoolis with ${profile?.xbAccount} to enable Teams Organizer`)});
+                                }else{
+                                    createPopup(1, {
+                                        title: tlang("绑定账号以启用Teams Organizer功能","Bind an account to enable Teams Organizer"),
+                                        images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe3b3136c8122042a30633BZiX4j0H06','https://x19.fp.ps.netease.com/file/68fe42052f2abaeb78cad4cd6gABb28K06']
+                                        ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("在Outlook®APP中查看课表和提醒","View schedule and reminders in Outlook® APP"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")] 
+                                    });
+                                }
+                            });
+                        } catch (e) {
+                            createPopup(1, {
+                                title: tlang("绑定账号以启用Teams Organizer功能","Bind an account to enable Teams Organizer"),
+                                images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe3b3136c8122042a30633BZiX4j0H06','https://x19.fp.ps.netease.com/file/68fe42052f2abaeb78cad4cd6gABb28K06']
+                                ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("在Outlook®APP中查看课表和提醒","View schedule and reminders in Outlook® APP"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")] 
+                            });
+                        }
+                         
                     }
                 });
             });
@@ -3849,10 +3878,12 @@ function startTeamsPanel(tasks){
     console.log("startTeamsPanel",tasks);
     let assignmentsData = [];
     
-    updateSyncPanels(4);    
-    updateSyncPanels(3);    
-    updateSyncPanels(2);
-    updateSyncPanels(1);
+    setTimeout(() => {
+        updateSyncPanels(4);    
+        updateSyncPanels(3);    
+        updateSyncPanels(2);
+        updateSyncPanels(1);
+    }, 30);
 
 
     for (const task of tasks) {
@@ -4405,12 +4436,12 @@ function createPopup(type, data = {}) {
             .gc-carousel .gc-carousel-arrow:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(59,130,246,0.4); }
             .gc-carousel .gc-carousel-arrow.gc-press { animation: gc-carousel-press .42s ease; }
             .gc-carousel .gc-carousel-arrow .gc-carousel-icon { font-family: 'Material Symbols Outlined Local', 'Material Symbols Outlined', 'Material Icons Outlined', sans-serif; font-weight: normal; font-style: normal; font-size: 26px; line-height: 1; letter-spacing: normal; pointer-events: none; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; display: inline-flex; align-items: center; justify-content: center; }
-            .gc-carousel .gc-img-wrap { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+            .gc-carousel .gc-img-wrap { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; transition: transform .45s ease; }
             .gc-carousel .gc-carousel-image { transition: transform .45s ease, opacity .45s ease; }
-            .gc-carousel:hover .gc-carousel-image:not(.gc-sliding) { transform: scale(1.02); }
+            .gc-carousel:hover .gc-img-wrap { transform: scale(1.02); }
             .gc-carousel .gc-carousel-image.gc-slide-from-left { animation: gc-carousel-slide-in-left .45s ease both; }
             .gc-carousel .gc-carousel-image.gc-slide-from-right { animation: gc-carousel-slide-in-right .45s ease both; }
-            .gc-carousel .gc-carousel-caption { position: absolute; bottom: 18px; left: 50%; transform: translate(-50%, 0); padding: 6px 14px; border-radius: 999px; background: rgba(17,25,40,0.35); color: #fff; font-size: 0.95rem; line-height: 1.25; pointer-events: none; display: none; max-width: calc(100% - 56px); box-shadow: 0 8px 18px rgba(15,23,42,0.14); backdrop-filter: blur(6px); }
+            .gc-carousel .gc-carousel-caption { position: absolute; bottom: 5px; left: 50%; transform: translate(-50%, 0); padding: 6px 14px; border-radius: 999px; background: rgba(17,25,40,0.35); color: #fff; font-size: 0.95rem; line-height: 1.25; pointer-events: none; display: none; max-width: calc(100% - 56px); box-shadow: 0 1px 18px rgba(15,23,42,0.14); backdrop-filter: blur(6px); }
             .gc-carousel .gc-carousel-caption.gc-caption-show { display: inline-flex; justify-content: center; text-align: center; }
             .gc-carousel .gc-carousel-caption.gc-caption-left { animation: gc-carousel-caption-left .38s ease both; }
             .gc-carousel .gc-carousel-caption.gc-caption-right { animation: gc-carousel-caption-right .38s ease both; }
@@ -4434,7 +4465,6 @@ function createPopup(type, data = {}) {
         let idx = typeof config.initialIndex === 'number' ? Math.max(0, Math.min(config.initialIndex, images.length ? images.length - 1 : 0)) : 0;
         const imgEl = container.querySelector('.gc-carousel-image');
         const emptyEl = container.querySelector('.gc-carousel-empty');
-        const dotsEl = container.querySelector('.gc-carousel-dots');
         const leftBtn = container.querySelector('.gc-left');
         const rightBtn = container.querySelector('.gc-right');
         const captionEl = container.querySelector('.gc-carousel-caption') || (() => {
@@ -4450,16 +4480,13 @@ function createPopup(type, data = {}) {
                 const wrap = document.createElement('div');
                 wrap.className = 'gc-img-wrap';
                 wrap.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;';
-                const blur = document.createElement('div');
-                blur.className = 'gc-img-blur';
-                blur.style.cssText = 'position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(16px);transform:scale(1.08);opacity:.45;border-radius:12px;';
                 imgEl.parentNode.insertBefore(wrap, imgEl);
-                wrap.appendChild(blur);
+              
                 wrap.appendChild(imgEl);
             }
         })();
 
-        const blurEl = container.querySelector('.gc-img-blur');
+  
 
         if (imgEl) {
             imgEl.addEventListener('animationend', (event) => {
@@ -4485,9 +4512,8 @@ function createPopup(type, data = {}) {
                 emptyEl.style.display = hasImages ? 'none' : 'block';
             }
             if (!hasImages) {
-                if (blurEl) blurEl.style.backgroundImage = '';
                 if (imgEl) imgEl.removeAttribute('src');
-                if (dotsEl) dotsEl.innerHTML = '';
+      
                 if (captionEl) captionEl.style.display = 'none';
                 if (leftBtn) leftBtn.style.display = 'none';
                 if (rightBtn) rightBtn.style.display = 'none';
@@ -4504,9 +4530,7 @@ function createPopup(type, data = {}) {
                 }
                 imgEl.src = src;
             }
-            if (blurEl) {
-                blurEl.style.backgroundImage = src ? `url("${src}")` : '';
-            }
+         
 
             const textContent = (texts[idx] || '').toString().trim();
             if (captionEl) {
@@ -4526,32 +4550,12 @@ function createPopup(type, data = {}) {
                 }
             }
 
-            if (dotsEl) {
-                dotsEl.innerHTML = '';
-                images.forEach((_, i) => {
-                    const dot = document.createElement('span');
-                    dot.className = 'gc-carousel-dot' + (i === idx ? ' active' : '');
-                    dot.setAttribute('data-idx', i);
-                    dotsEl.appendChild(dot);
-                });
-            }
-
+          
             if (leftBtn) leftBtn.style.display = images.length > 1 ? 'flex' : 'none';
             if (rightBtn) rightBtn.style.display = images.length > 1 ? 'flex' : 'none';
         }
 
-        if (dotsEl) {
-            dotsEl.addEventListener('click', (e) => {
-                const target = e.target;
-                const value = target && target.getAttribute ? target.getAttribute('data-idx') : null;
-                if (value == null) return;
-                const nextIdx = parseInt(value, 10);
-                if (Number.isNaN(nextIdx) || nextIdx === idx) return;
-                const direction = nextIdx > idx ? 'right' : 'left';
-                idx = nextIdx;
-                update(direction);
-            });
-        }
+      
 
         if (leftBtn) {
             leftBtn.addEventListener('click', (e) => {
@@ -4597,6 +4601,7 @@ function createPopup(type, data = {}) {
                 <button class="custom-btn btn-okay"  id="gc-popup-okay">${tlang("确认","Okay")}</button>
             `;
             modal.appendChild(body); 
+            
         } else if (type === 4){
             getFromChromeStorage("MSFeaturesSettings").then(settings => { 
                 let originalSettings = settings? settings : {CalenderSyncPeriod: "1 Day", CalenderSyncShift: true};
@@ -4758,17 +4763,21 @@ function createPopup(type, data = {}) {
         const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
         ensurePopupCarouselStyles();
         body.innerHTML = `
-            <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:200px;max-height:320px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
-                <button type="button" class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+            <div class="gc-type1-top" style="display:flex;justify-content:flex-start;align-items:center;gap: 10px;margin:0;padding-bottom: 30px;">
+            <img src="${chrome.runtime.getURL('res/msteamsLogo.svg')}" style="height:30px;vertical-align:middle;">
+            <div class="modal-text" style="font-weight:500;margin-bottom:0px">${data.title}</div>
+            </div>
+            <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:180px;max-height:260px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
+                <button type="button" class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
                     <span class="gc-carousel-icon material-symbols-outlined">chevron_left</span>
                 </button>
-                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:300px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.25);position:relative;z-index:1;" />
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;position:relative;z-index:1;" />
                 <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
-                <button type="button" class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                <button type="button" class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
                     <span class="gc-carousel-icon material-symbols-outlined">chevron_right</span>
                 </button>
-                <div class="gc-carousel-caption" style="display:none;"></div>
-                <div class="gc-carousel-dots" style="position:absolute;bottom:10px;left:0;right:0;display:flex;align-items:center;justify-content:center;"></div>
+                <div class="gc-carousel-caption" style="display:none;z-index:99;"></div>
+                
             </div>
         `;
         modal.appendChild(body);
@@ -4784,25 +4793,25 @@ function createPopup(type, data = {}) {
         const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
         ensurePopupCarouselStyles();
         body.innerHTML = `
-            <div class="gc-type1-top" style="display:flex;justify-content:flex-start;align-items:center;gap: 10px;margin:0;padding-bottom: 13px;">
-            <img src="chrome-extension://gohdhhoiemjlgioonlfhdihlncinnmjc/res/msteamsLogo.svg" style="height:30px;vertical-align:middle;">
-            <div class="modal-text" style="font-weight:500;margin-bottom:0px">未绑定Teams或校宝账号不匹配</div>
+            <div class="gc-type1-top" style="display:flex;justify-content:flex-start;align-items:center;gap: 10px;margin:0;padding-bottom: 30px;">
+            <img src="${chrome.runtime.getURL('res/msteamsLogo.svg')}" style="height:30px;vertical-align:middle;">
+            <div class="modal-text" style="font-weight:500;margin-bottom:0px">${data.title}</div>
             </div>
             <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:180px;max-height:260px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
                 <button type="button" class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
                     <span class="gc-carousel-icon material-symbols-outlined">chevron_left</span>
                 </button>
-                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.24);position:relative;z-index:1;" />
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;position:relative;z-index:1;" />
                 <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
                 <button type="button" class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
                     <span class="gc-carousel-icon material-symbols-outlined">chevron_right</span>
                 </button>
-                <div class="gc-carousel-caption" style="display:none;"></div>
-                <div class="gc-carousel-dots" style="position:absolute;bottom:8px;left:0;right:0;display:flex;align-items:center;justify-content:center;"></div>
+                <div class="gc-carousel-caption" style="display:none;z-index:99;"></div>
+                
             </div>
-            <div class="custom-modal-footer" style="margin-top:14px;">
+            <div class="custom-modal-footer" style="margin-top:30px;">
                 <button class="custom-btn btn-secondary" id="gc-popup-discard">${tlang("取消","Discard")}</button>
-                <button class="custom-btn btn-primary" id="gc-popup-settings-MS">${tlang("前往设置","Go to Settings")}</button>
+                <button class="custom-btn btn-primary" id="gc-popup-settings-MS">${tlang("前往查看","Go to Settings")}</button>
             </div>
         `;
         setupPopupCarousel(body.querySelector('.gc-carousel'), {
@@ -4816,6 +4825,13 @@ function createPopup(type, data = {}) {
     document.body.appendChild(overlay);
     if (type == 7 || type == 1 || type == 8) {
         document.getElementsByClassName("custom-modal")[0].style.maxWidth = "700px";
+    }
+    if(type==2){
+        try{
+            document.getElementById('gc-popup-okay').addEventListener('click', function() {
+                    document.getElementById('gc-popup-discard').click()
+            });
+        }catch(e){}
     }
     handleGCPopupClick = handleGCPopupClick.bind(this);
     overlay.addEventListener('click', handleGCPopupClick);  

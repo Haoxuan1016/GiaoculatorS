@@ -70,39 +70,16 @@ function tlang(chi,eng){
 
 chrome.runtime.onInstalled.addListener(function(details) {
     if (details.reason === "update") {
-        return;//该版本无重大更新
         let updatedMsg;
-        if(details.previousVersion === "0.61"){
-            return;
-        }
-        if(details.previousVersion === "0.60") {
-            updatedMsg = tlang(`
+        updatedMsg = tlang(`
                 <div style="color: white; font-size: 11px;">
       <p style="margin-bottom: 2px; margin-top: 2px;">
-        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
+        <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 修复了部分情况下科目加权匹配错误的问题</p>
-    </div>
-    `,`
-                <div style="color: white; font-size: 11px;">
-      <p style="margin-bottom: 2px; margin-top: 2px;">
-        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
-        <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
-      </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· Bug Fixed: Subject Weight may incorrectly matched.</p>
-    </div>
-    
-    `)
-        }else{
-            updatedMsg = tlang(`
-                <div style="color: white; font-size: 11px;">
-      <p style="margin-bottom: 2px; margin-top: 2px;">
-        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
-        <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
-      </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【任务预测模式】应用至GPA计算功能开放！用户可以将看到自定义任务后GPA的变动，并支持保存多门科目的编辑记录。</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【自动计算优化】优化计算逻辑，提升计算速度，并修复了无法获取到某些科目成绩的问题。</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【计算】修复了无分科目被计入GPA计算导致绩点为0的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【计算】修复了体育课可能未被计入的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;"><strong>· 【Teams Organizer】Teams绑定功能正式上线！快点击主界面->Teams面板查看吧！</strong></p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -115,7 +92,6 @@ chrome.runtime.onInstalled.addListener(function(details) {
     </div>
     
     `)
-        }
         
         saveToChromeStorage("updateMsg", updatedMsg);
         
@@ -1455,6 +1431,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 .finally(() => {
                     chrome.storage.local.set({ "MSaccessToken": "" });
                     chrome.storage.local.set({ "MSrefresh_token": "" });
+                    chrome.storage.local.set({ "MS_LastSync_Calender": null });
+                    chrome.storage.local.set({ "MS_LastSync_TeamsTask": null });
+                    chrome.storage.local.set({ "MS_LastSync_XBTask": null });
                 });
             break;
         case "bp-removeAllCalenderEvent":
@@ -2377,9 +2356,11 @@ const TOKEN_URL = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token
 
 
 async function M_BindMSAccount(xbAccount) {
+    let isNewBind = true;
     //不再传入xbAccount
     if(xbAccount=="Rebind"){
         xbAccount=(await getFromChromeStorage("MSUserProfile"))["xbAccount"];
+        isNewBind = false;
     }
     try {
         console.log("M_BindMSAccount[Start]");
@@ -2394,7 +2375,8 @@ async function M_BindMSAccount(xbAccount) {
                 name: userProfile.displayName,
                 email: userProfile.mail,
                 state: 1,
-                xbAccount: xbAccount
+                xbAccount: xbAccount,
+                showGuide: isNewBind ? true : false
             });
             M_send_comp_msg("MSAccountBinded", null, 0);
             
