@@ -3749,7 +3749,7 @@ function showTeamsMainPannelBtn(){
                     }else{
                         createPopup(1, {
                              images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe380f76c5b70b2ff47522jFTDZVBX06']
-                             ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")] 
+                             ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("同步课程表和任务截止日期到日历","Sync Teams calendar to Xiaobao schedule")] 
                             });
                     }
                 });
