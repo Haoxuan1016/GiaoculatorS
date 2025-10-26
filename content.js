@@ -28,12 +28,14 @@ function waitForElement() {
     if (targetElement) {
         setTimeout(function() {
             updateContent();
+            modifyPageFooter();
             showTeamsMainPannelBtn();
             hideAseRepeatedly(null,100,1500)
         }, 30);
         setTimeout(function() {
             updateContent();
             showTeamsMainPannelBtn();
+            modifyPageFooter();
             hideAseRepeatedly(null,100,1500);
             addBtnBindings();
         }, 100);
@@ -3732,7 +3734,7 @@ function showTeamsMainPannelBtn(){
     if(document.getElementById("gc_teamsMainBtn")) return;
     const btnHtml = `<span class="ng-scope fe-modules-task-__examTabItem--308Eb5U31Pt_Y24rocyVZU" id="gc_teamsMainBtn">
         <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " class="fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf">
-    <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang("Teams面板","Teams Pannel")}</span>
+    <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang(" Teams 面板","Teams Organizer")}</span>
 </button></stu-arc-button>
     </span>`;
 
@@ -3745,7 +3747,10 @@ function showTeamsMainPannelBtn(){
                     if(enabled){
                         switchToTeamsPanel();
                     }else{
-                        createPopup(1, { text: tlang("未绑定Teams或校宝账号不匹配", "Not bound to Teams or account mismatch") });
+                        createPopup(1, {
+                             images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe380f76c5b70b2ff47522jFTDZVBX06']
+                             ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")] 
+                            });
                     }
                 });
             });
@@ -3778,7 +3783,7 @@ function switchToTeamsPanel() {
         mainContainer.innerHTML = html;
         document.getElementById("gb_teamsPanel_s1_header").children[0].innerText = tlang("任务列表","Teams Assignments");
         document.getElementById("gb_teamsPanel_s2_header").children[0].innerText = tlang("日程同步","Calender Sync");
-
+        document.getElementById("teamsGCLogo").src = chrome.runtime.getURL("res/iconBig_teamsAcc.png");
         getFromChromeStorage("MSTasks").then(tasks => {
             startTeamsPanel(tasks);
             
@@ -3930,7 +3935,35 @@ function startTeamsPanel(tasks){
     function repopulateAssignments() {
         const assignmentsList = document.getElementById('assignmentsList');
         assignmentsList.innerHTML = '';
-        
+
+        // If we are refreshing, stop the refresh UI when the list is being displayed
+        try {
+            if (window.gcTeamsRefreshing && typeof window.gcStopRefreshUI === 'function') {
+                window.gcStopRefreshUI();
+            }
+        } catch (e) {}
+
+        // Empty-state when no assignments
+        if (!currentAssignments || currentAssignments.length === 0) {
+            try { ensureTeamsPanelStyles?.(); ensureMaterialSymbols?.(); } catch (e) {}
+            const empty = document.createElement('div');
+            empty.className = 'empty-state';
+            empty.innerHTML = `
+                <span class="material-symbols-outlined">list_alt_check</span>
+                <div>${tlang('暂未在Teams中找到布置的作业！', 'No homework found in Teams platform')}</div>
+                <a id="gcEmptyRefreshLink">${tlang('点击刷新', 'Click to refresh')}</a>
+            `;
+            assignmentsList.appendChild(empty);
+            const link = document.getElementById('gcEmptyRefreshLink');
+            if (link) {
+                link.addEventListener('click', () => {
+                    try { if (typeof window.gcStartRefreshUI === 'function') window.gcStartRefreshUI(); } catch (e) {}
+                    try { chrome.runtime.sendMessage({ type: 'bp-refreshTeamsTask' }); } catch (e) {}
+                });
+            }
+            return;
+        }
+
         currentAssignments.forEach((assignment, index) => {
             const item = document.createElement('div');
             const isIgnored = assignment.priority === 'ignored';
@@ -4075,6 +4108,136 @@ function startTeamsPanel(tasks){
             });
         });
     });
+    // Inject Material icons, styles, and sorting/refresh controls
+    function ensureMaterialSymbols() {
+        const ids = [
+            'gc-mat-symbols-base',
+            'gc-mat-icon-clock',
+            'gc-mat-icon-cached',
+            'gc-mat-icon-list'
+        ];
+        const hrefs = [
+            'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined',
+            'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=clock_arrow_down',
+            'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=cached',
+            'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=list_alt_check'
+        ];
+        ids.forEach((id, idx) => {
+            if (!document.getElementById(id)) {
+                const link = document.createElement('link');
+                link.id = id;
+                link.rel = 'stylesheet';
+                link.href = hrefs[idx];
+                try { document.head.appendChild(link); } catch (e) {}
+            }
+        });
+        try {
+            if (document.fonts && document.fonts.load) {
+                document.fonts.load("24px 'Material Symbols Outlined Local'");
+            }
+        } catch (e) {}
+    }
+    function ensureTeamsPanelStyles() {
+        if (document.getElementById('gc-teams-panel-icons-style')) return;
+        const style = document.createElement('style');
+        style.id = 'gc-teams-panel-icons-style';
+        const localFontUrl = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) ? chrome.runtime.getURL('res/fonts/MaterialSymbolsOutlined.ttf') : '';
+        const localFontFace = localFontUrl ? `@font-face { font-family: 'Material Symbols Outlined Local'; font-style: normal; font-weight: 400; src: url('${localFontUrl}') format('truetype'); font-display: swap; }` : '';
+        style.textContent = `
+            ${localFontFace}
+            .sort-controls { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+            .icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; border: 1px solid #dee2e6; background-color: #f8f9fa; color: #333; cursor: pointer; transition: background-color .2s ease, transform .1s ease; user-select: none; }
+            .icon-btn:hover { background-color: #e9ecef; }
+            .icon-btn:active { transform: scale(0.96); }
+            .material-symbols-outlined { font-family: 'Material Symbols Outlined Local', 'Material Symbols Outlined', 'Material Icons Outlined', sans-serif; font-weight: normal; font-style: normal; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-size: 22px; line-height: 1; display: inline-block; letter-spacing: normal; text-transform: none; -webkit-font-smoothing: antialiased; }
+            /* Refresh spin + active color */
+            @keyframes gc-rotate { 0%{transform: rotate(0deg);} 100%{transform: rotate(360deg);} }
+            .icon-btn.gc-rotating .material-symbols-outlined { animation: gc-rotate 1s linear infinite; }
+            .icon-btn.gc-refresh-active { color: #3498db; border-color: #3498db; background-color: #eef6ff; }
+            .icon-btn[data-tooltip]::after { content: attr(data-tooltip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.85); color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
+            .icon-btn[data-tooltip]::before { content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); border-width: 6px 6px 0 6px; border-style: solid; border-color: rgba(0,0,0,.85) transparent transparent transparent; opacity: 0; transition: opacity .15s ease; }
+            .icon-btn:hover::after, .icon-btn:hover::before { opacity: 1; }
+            .assignments-list .empty-state { height: 380px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #6c757d; }
+            .assignments-list .empty-state .material-symbols-outlined { font-size: 72px; color: #9aa0a6; }
+            .assignments-list .empty-state a { color: #1e88e5; text-decoration: underline; cursor: pointer; }
+        `;
+        try { document.head.appendChild(style); } catch (e) {}
+    }
+    function updateSortIconUI(currentSort) {
+        const iconWrap = document.getElementById('gcSortToggleIcon');
+        if (!iconWrap) return;
+        const isPublished = currentSort === 'published';
+        iconWrap.style.color = isPublished ? '#3498db' : '#333';
+        iconWrap.setAttribute('data-tooltip', isPublished ? tlang('当前排序：新发布的靠前', 'Sort: Newer Tasks First') : tlang('当前排序：即将截止靠前', 'Sort: Deadline First'));
+    }
+    (function initSortAndRefreshIcons() {
+        try { ensureMaterialSymbols(); ensureTeamsPanelStyles(); } catch (e) {}
+        const sc = document.querySelector('.sort-controls');
+        if (!sc) return;
+        const oldBtn = sc.querySelector('.sort-btn');
+        if (oldBtn) { oldBtn.style.display = 'none'; }
+        if (!document.getElementById('gcSortToggleIcon')) {
+            const sortDiv = document.createElement('div');
+            sortDiv.id = 'gcSortToggleIcon';
+            sortDiv.className = 'icon-btn';
+            sortDiv.setAttribute('data-tooltip', 'Sort');
+            sortDiv.innerHTML = '<span class="material-symbols-outlined">clock_arrow_down</span>';
+            sc.appendChild(sortDiv);
+        }
+        if (!document.getElementById('gcRefreshIcon')) {
+            const refDiv = document.createElement('div');
+            refDiv.id = 'gcRefreshIcon';
+            refDiv.className = 'icon-btn';
+            refDiv.setAttribute('data-tooltip', tlang('刷新', 'Refresh'));
+            refDiv.innerHTML = '<span class="material-symbols-outlined">cached</span>';
+            sc.appendChild(refDiv);
+        }
+        getFromChromeStorage('MSFeature_AssignmentDisplay_Sort').then(sort => {
+            let current = sort == null ? 'published' : sort;
+            saveToChromeStorage('MSFeature_AssignmentDisplay_Sort', current);
+            updateSortIconUI(current);
+            sortAssignments(current);
+        });
+        function startRefreshUI(){
+            const wrap = document.getElementById('gcRefreshIcon');
+            if (!wrap) return;
+            window.gcTeamsRefreshing = true;
+            wrap.classList.add('gc-refresh-active','gc-rotating');
+            wrap.style.pointerEvents = 'none';
+        }
+        function stopRefreshUI(){
+            const wrap = document.getElementById('gcRefreshIcon');
+            if (!wrap) return;
+            wrap.classList.remove('gc-rotating','gc-refresh-active');
+            wrap.style.pointerEvents = '';
+            window.gcTeamsRefreshing = false;
+        }
+
+        const sortIcon = document.getElementById('gcSortToggleIcon');
+        if (sortIcon && !sortIcon._wired) {
+            sortIcon.addEventListener('click', () => {
+                getFromChromeStorage('MSFeature_AssignmentDisplay_Sort').then(sort => {
+                    const next = sort === 'published' ? 'due' : 'published';
+                    updateSortIconUI(next);
+                    sortAssignments(next);
+                    saveToChromeStorage('MSFeature_AssignmentDisplay_Sort', next);
+                });
+            });
+            sortIcon._wired = true;
+        }
+        const refreshIcon = document.getElementById('gcRefreshIcon');
+        if (refreshIcon && !refreshIcon._wired) {
+            refreshIcon.addEventListener('click', () => {
+                startRefreshUI();
+                try { chrome.runtime.sendMessage({ type: 'bp-refreshTeamsTask' }); } catch (e) {}
+            });
+            refreshIcon._wired = true;
+        }
+        // Expose stop/start to repopulate handler via closures
+        window.gcStartRefreshUI = startRefreshUI;
+        window.gcStopRefreshUI = stopRefreshUI;
+    })();
+
     function addSyncBoxListener(id, popupType) {
         const box = document.getElementById(id);
         if (!box) return;
@@ -4232,17 +4395,7 @@ function createPopup(type, data = {}) {
         const body = document.createElement('div'); 
         body.className = 'custom-modal-body';
 
-        if (type === 1) {
-            body.innerHTML = `
-                <div class="teams-icon"><img src="${chrome.runtime.getURL('res/msteamsLogo.svg')}" style="height: 2em;vertical-align: middle;margin-right: 19px;margin-top: -15px;"> </div>
-                <div class="modal-text">${data.text || 'Default message'}</div>
-                <div class="custom-modal-footer">
-                    <button class="custom-btn btn-secondary" id="gc-popup-discard">${tlang("取消","Discard")}</button>
-                    <button class="custom-btn btn-primary" id="gc-popup-settings-MS">${tlang("前往设置","Go to Settings")}</button>
-                </div>
-            `;
-            modal.appendChild(body); 
-        } else if (type === 2) {
+        if (type === 2) {
             body.innerHTML = `
                 <div class="modal-text">${data.text || 'Tip: Default tip message'}</div>
                 <button class="custom-btn btn-okay"  id="gc-popup-okay">${tlang("确认","Okay")}</button>
@@ -4402,11 +4555,157 @@ function createPopup(type, data = {}) {
             modal.appendChild(body); 
         }
     }
-    
+    if (type === 8) {//+图文
+        const body = document.createElement('div');
+        body.className = 'custom-modal-body';
+        const images = Array.isArray(data.images) ? data.images : [];
+        const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
+        body.innerHTML = `
+            <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:200px;max-height:320px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
+                <button class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">‹</button>
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:300px;object-fit:contain;display:${images.length? 'block':'none'};" />
+                <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
+                <button class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:36px;height:36px;border-radius:18px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">›</button>
+                <div class="gc-carousel-dots" style="position:absolute;bottom:10px;left:0;right:0;display:flex;gap:6px;align-items:center;justify-content:center;"></div>
+            </div>
+        `;
+        modal.appendChild(body);
+        (function setupCarousel(container){
+            const imgEl = container.querySelector('.gc-carousel-image');
+            const dotsEl = container.querySelector('.gc-carousel-dots');
+            const left = container.querySelector('.gc-left');
+            const right = container.querySelector('.gc-right');
+            // Create image wrapper + blur layer and caption if absent
+            (function ensureEnhancedImage(){
+                if (!container.querySelector('.gc-img-wrap') && imgEl) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'gc-img-wrap';
+                    wrap.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;';
+                    const blur = document.createElement('div');
+                    blur.className = 'gc-img-blur';
+                    blur.style.cssText = 'position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(16px);transform:scale(1.08);opacity:.45;border-radius:12px;';
+                    // Insert wrapper before image and move image inside
+                    imgEl.parentNode.insertBefore(wrap, imgEl);
+                    wrap.appendChild(blur);
+                    wrap.appendChild(imgEl);
+                    // Beautify image itself
+                    try { imgEl.style.borderRadius = '12px'; imgEl.style.boxShadow = '0 10px 28px rgba(0,0,0,.25)'; imgEl.style.position = 'relative'; imgEl.style.zIndex = '1'; } catch(e){}
+                }
+                if (!container.querySelector('.gc-carousel-caption')) {
+                    const cap = document.createElement('div');
+                    cap.className = 'gc-carousel-caption';
+                    cap.style.cssText = 'position:absolute;left:12px;right:12px;bottom:38px;text-align:center;z-index:2;color:#fff;font-size:0.95rem;line-height:1.2;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.45);box-shadow:0 4px 14px rgba(0,0,0,.25);backdrop-filter:blur(8px);display:none;pointer-events:none;';
+                    container.appendChild(cap);
+                }
+            })();
+            const blurEl = container.querySelector('.gc-img-blur');
+            const captionEl = container.querySelector('.gc-carousel-caption');
+            const texts = Array.isArray(data.text) ? data.text : [];
+            let idx = initialIndex;
+            function render(){
+                if(!images.length) return;
+                const src = images[idx];
+                imgEl.src = src;
+                if (blurEl) blurEl.style.backgroundImage = src ? `url("${src}")` : '';
+                const t = (texts[idx] || '').toString();
+                const trimmed = t.length > 15 ? (t.slice(0,15) + '…') : t;
+                if (captionEl) { captionEl.textContent = trimmed; captionEl.style.display = trimmed ? 'block' : 'none'; }
+                dotsEl.innerHTML = '';
+                for(let i=0;i<images.length;i++){
+                    const dot = document.createElement('span');
+                    dot.style.cssText = 'width:9px;height:9px;border-radius:50%;background:' + (i===idx?'#333':'#bbb') + ';display:inline-block;cursor:pointer;';
+                    dot.setAttribute('data-idx', i);
+                    dotsEl.appendChild(dot);
+                }
+                if(left) left.style.display = images.length>1 ? 'flex' : 'none';
+                if(right) right.style.display = images.length>1 ? 'flex' : 'none';
+            }
+            if(left) left.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx - 1 + images.length) % images.length; render(); });
+            if(right) right.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx + 1) % images.length; render(); });
+            dotsEl.addEventListener('click', (e)=>{ const t=e.target; const v=t && t.getAttribute && t.getAttribute('data-idx'); if(v!=null){ idx = parseInt(v,10)||0; render(); } });
+            render();
+        })(body.querySelector('.gc-carousel'));
+    } else if (type === 1) {
+        // Override layout for type 1: top-right header + image carousel in the middle
+        const body = modal.querySelector('.custom-modal-body') || (()=>{ const b=document.createElement('div'); b.className='custom-modal-body'; modal.appendChild(b); return b; })();
+        const images = Array.isArray(data.images) ? data.images : [];
+        const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
+        body.innerHTML = `
+            <div class="gc-type1-top" style="display:flex;justify-content:flex-start;align-items:center;gap: 10px;margin:0;padding-bottom: 13px;">
+            <img src="chrome-extension://gohdhhoiemjlgioonlfhdihlncinnmjc/res/msteamsLogo.svg" style="height:30px;vertical-align:middle;">
+            <div class="modal-text" style="font-weight:500;margin-bottom:0px">未绑定Teams或校宝账号不匹配</div>
+            </div>
+            <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:180px;max-height:260px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
+                <button class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">‹</button>
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};" />
+                <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
+                <button class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;background:rgba(0,0,0,0.45);color:#fff;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">›</button>
+                <div class="gc-carousel-dots" style="position:absolute;bottom:8px;left:0;right:0;display:flex;gap:6px;align-items:center;justify-content:center;"></div>
+            </div>
+            <div class="custom-modal-footer" style="margin-top:14px;">
+                <button class="custom-btn btn-secondary" id="gc-popup-discard">${tlang("取消","Discard")}</button>
+                <button class="custom-btn btn-primary" id="gc-popup-settings-MS">${tlang("前往设置","Go to Settings")}</button>
+            </div>
+        `;
+        (function setupCarousel(container){
+            const imgEl = container.querySelector('.gc-carousel-image');
+            const dotsEl = container.querySelector('.gc-carousel-dots');
+            const left = container.querySelector('.gc-left');
+            const right = container.querySelector('.gc-right');
+            // Create image wrapper + blur layer and caption if absent
+            (function ensureEnhancedImage(){
+                if (!container.querySelector('.gc-img-wrap') && imgEl) {
+                    const wrap = document.createElement('div');
+                    wrap.className = 'gc-img-wrap';
+                    wrap.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;';
+                    const blur = document.createElement('div');
+                    blur.className = 'gc-img-blur';
+                    blur.style.cssText = 'position:absolute;inset:0;background-position:center;background-size:cover;filter:blur(14px);transform:scale(1.08);opacity:.45;border-radius:12px;';
+                    imgEl.parentNode.insertBefore(wrap, imgEl);
+                    wrap.appendChild(blur);
+                    wrap.appendChild(imgEl);
+                    try { imgEl.style.borderRadius = '12px'; imgEl.style.boxShadow = '0 8px 24px rgba(0,0,0,.24)'; imgEl.style.position = 'relative'; imgEl.style.zIndex = '1'; } catch(e){}
+                }
+                if (!container.querySelector('.gc-carousel-caption')) {
+                    const cap = document.createElement('div');
+                    cap.className = 'gc-carousel-caption';
+                    cap.style.cssText = 'position:absolute;left:12px;right:12px;bottom:34px;text-align:center;z-index:2;color:#fff;font-size:0.93rem;line-height:1.2;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.45);box-shadow:0 4px 12px rgba(0,0,0,.25);backdrop-filter:blur(8px);display:none;pointer-events:none;';
+                    container.appendChild(cap);
+                }
+            })();
+            const blurEl = container.querySelector('.gc-img-blur');
+            const captionEl = container.querySelector('.gc-carousel-caption');
+            const texts = Array.isArray(data.text) ? data.text : [];
+            let idx = initialIndex;
+            function render(){
+                if(!images.length) return;
+                const src = images[idx];
+                imgEl.src = src;
+                if (blurEl) blurEl.style.backgroundImage = src ? `url("${src}")` : '';
+                const t = (texts[idx] || '').toString();
+                const trimmed = t.length > 15 ? (t.slice(0,15) + '…') : t;
+                if (captionEl) { captionEl.textContent = trimmed; captionEl.style.display = trimmed ? 'block' : 'none'; }
+                dotsEl.innerHTML = '';
+                for(let i=0;i<images.length;i++){
+                    const dot = document.createElement('span');
+                    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:' + (i===idx?'#333':'#bbb') + ';display:inline-block;cursor:pointer;';
+                    dot.setAttribute('data-idx', i);
+                    dotsEl.appendChild(dot);
+                }
+                if(left) left.style.display = images.length>1 ? 'flex' : 'none';
+                if(right) right.style.display = images.length>1 ? 'flex' : 'none';
+            }
+            if(left) left.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx - 1 + images.length) % images.length; render(); });
+            if(right) right.addEventListener('click', (e)=>{ e.stopPropagation(); if(!images.length) return; idx = (idx + 1) % images.length; render(); });
+            dotsEl.addEventListener('click', (e)=>{ const t=e.target; const v=t && t.getAttribute && t.getAttribute('data-idx'); if(v!=null){ idx = parseInt(v,10)||0; render(); } });
+            render();
+        })(body.querySelector('.gc-carousel'));
+    }
+
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    if(type == 7 ){
-        document.getElementsByClassName("custom-modal")[0].style.maxWidth="700px"
+    if (type == 7 || type == 1 || type == 8) {
+        document.getElementsByClassName("custom-modal")[0].style.maxWidth = "700px";
     }
     handleGCPopupClick = handleGCPopupClick.bind(this);
     overlay.addEventListener('click', handleGCPopupClick);  
@@ -4507,3 +4806,56 @@ function removePopup(overlay) {
 }
 ///////TEAMS PANEL
 
+// Append Giaoculator badge under the page footer if not already present
+function modifyPageFooter() {
+  try {
+    // Avoid duplicate insertion by our marker or by checking for the logo src
+    if (document.querySelector('[data-giaoculator="footer-badge"]')) return;
+
+    const logoUrl = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL)
+      ? chrome.runtime.getURL('res/iconBig_foot.png')
+      : 'res/iconBig_only.png';
+    if (document.querySelector(`img[src="${logoUrl}"]`)) return;
+    const footerEl = document.querySelector('div[class*="fe-components-stu-business-org-footer-__footBox--"]')
+      || document.querySelector('footer')
+      || document.querySelector('.fe-components-stu-business-org-footer-__footBox--3hotK29i9BpxtSdcmmjpqY');
+
+    if (!footerEl) return;
+    const badge = document.createElement('div');
+    badge.setAttribute('data-giaoculator', 'footer-badge');
+    badge.style.cssText = [
+      'display:flex',
+      'align-items:center',
+      'justify-content:center',
+      'gap:6px',
+      'margin:-17px 0 0 0',
+      'font-size:12px',
+      'color:#666',
+      'padding-bottom:20px',
+      'select-user:none',
+    ].join(';');
+
+    // Logo image
+    const img = document.createElement('img');
+    img.src = logoUrl;
+    img.alt = 'Giaoculator';
+    img.style.cssText = 'margin-left:2.5px;height:30px;margin-bottom:1px';
+
+    const suffix = navigator.userAgent.toLowerCase().includes('edg') ? 'e' : 'c';
+    const verBase = (typeof version !== 'undefined') ? String(version) : '';
+    const verText = `${verBase}${suffix}`;
+
+    const text = document.createElement('span');
+    text.textContent = `(${verText})`;
+
+    badge.appendChild(img);
+    badge.appendChild(text);
+    footerEl.insertAdjacentElement('afterend', badge);
+
+    if (typeof window !== 'undefined') {
+      window.modifyPageFooter = modifyPageFooter;
+    }
+  } catch (err) {
+    try { console.warn('Giaoculator: modifyPageFooter failed', err); } catch (_) {}
+  }
+}

@@ -49,6 +49,7 @@
         "res/disablev2.png",
         "res/disable.png",
         "res/icon.png",
+        "res/iconBig_teamsAcc.png",
         "res/hideOff.svg",
         "res/hideOn.svg",
         "res/hideOff_Dark.svg",
@@ -66,9 +67,11 @@
         "res/colored_bg.jpg",
         "res/inwindow-popup.css",
         "res/msteamsLogo.svg",
+        "res/iconBig_foot.png",
         "res/clockIcon.png",
         "teamsPanel.html",
-        "res/refresh.svg"
+        "res/refresh.svg",
+        "res/fonts/MaterialSymbolsOutlined.ttf"
       ],
       "matches": ["<all_urls>"]
     }

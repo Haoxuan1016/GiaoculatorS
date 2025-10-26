@@ -1258,7 +1258,7 @@ TeamsBidingBtn.addEventListener('click', function() {
 
 });questionMarkLabel.addEventListener('mouseover', function () {
         const tooltip = document.createElement('div');
-        tooltip.textContent = tlang("与Teams账号连接后可在校宝提交Teams系统项目，并支持将DDL自动至Teams日历","You may submit Teams assignments in Xiaobao and automatically add DDLs to your Teams calendar after connecting with Teams Account.");
+        tooltip.textContent = tlang(`与Teams账号连接后可在“Teams面板”中同步Teams任务、课程表、以及DDL信息`,`After connecting to a Teams account, you can sync Teams tasks, schedules, and DDL information in the "Teams Organizer" panel.`);
         tooltip.style.position = 'absolute';
         tooltip.style.background = '#333';
         tooltip.style.color = '#fff';
@@ -1458,7 +1458,7 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
         if(data.state == 1){
             modal.querySelector('#userSelect').outerHTML = `<p style="color:#333;">${data.xbAccount}</p>`;
             modal.querySelector('#bindButton').outerHTML = `<p style="color:#333;">${data.name}</p>`;
-            note.innerText = (`绑定的Teams仅在校宝登录账号为${data.xbAccount}时生效，如需修改请先解除绑定`);
+            note.innerText = tlang(`绑定的Teams仅在校宝登录账号为${data.xbAccount}时生效，如需修改请先解除绑定`,`Login Xiaobao with ${data.xbAccount}. Please unbind first if you need to modify it.`);
             unbindBtn.style.display= "block";
             modal.querySelector('#saveBtn').innerText = tlang("确定","Okay");
         }else{
@@ -1474,7 +1474,7 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
                 if(data.state == 1){
                     modal.querySelector('#userSelect').outerHTML = `<p style="color:#333;">${data.xbAccount}</p>`;
                     modal.querySelector('#bindButton').outerHTML = `<p style="color:#333;">${data.name}</p>`;
-                    note.innerText = (`绑定的Teams仅在校宝登录账号为${data.xbAccount}时生效，如需修改请先解除绑定`);
+                    note.innerText = (tlang(`${data.xbAccount}绑定成功！请重新登录校宝以启用相关功能。`,`${data.xbAccount} binded successfully! Please relogin Xiaobao to enable related features.`));
                     unbindBtn.style.display= "block";
                     let TeamsBidingBtn = document.getElementById('bindMSAccountsBtn');
                     TeamsBidingBtn.innerText = tlang(`已绑定：${data.name}`,`Binded:${data.name}`);
@@ -1502,9 +1502,69 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
     }   
     const unbindBtn = modal.querySelector('#cancelBtn');
     unbindBtn.addEventListener('click', () => {
-        if(confirm(tlang("是否解除绑定Teams账号？","Are you sure to unbind Teams account?"))){
-            unbindTeams();
-        }
+        const confirmModal = document.createElement('div');
+        confirmModal.classList.add('teams-biding-modal');
+        confirmModal.innerHTML = `
+            <div class="modal-content">
+                <h3 style="margin-top:0;">${tlang("解除绑定确认","Unbind Confirmation")}</h3>
+                <p>${tlang("是否解除绑定Teams账号？","Are you sure to unbind Teams account?")}</p>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;user-select:none;">
+                    <input type="checkbox" id="removeCalendarCheckbox" />
+                    <span>${tlang("同时移除之前同步到Teams日历的通知事件","also remove previous notification synced calender from Teams Calender")}</span>
+                </label>
+                <div class="modal-buttons">
+                    <button id="confirmUnbindBtn" style="background:#e53935;color:#fff;">${tlang("确认解绑","Unbind")}</button>
+                    <button id="cancelConfirmBtn">${tlang("取消","Cancel")}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(confirmModal);
+
+        const closeConfirm = () => { try { document.body.removeChild(confirmModal); } catch (e) {} };
+        confirmModal.querySelector('#cancelConfirmBtn').addEventListener('click', closeConfirm);
+        confirmModal.querySelector('#confirmUnbindBtn').addEventListener('click', () => {
+            const removeCal = confirmModal.querySelector('#removeCalendarCheckbox').checked;
+            const confirmBtn = confirmModal.querySelector('#confirmUnbindBtn');
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.7';
+            if (removeCal) {
+                // Show 5-second loading bar before unbinding
+                closeConfirm();
+                const loadingModal = document.createElement('div');
+                loadingModal.classList.add('teams-biding-modal');
+                loadingModal.innerHTML = `
+                    <div class="modal-content">
+                        <h3 style="margin:0;">${tlang("正在移除日历通知","Removing calendar notifications")}</h3>
+                        <div style="margin-top:12px;background:#eee;border-radius:6px;height:10px;width:100%;position:relative;overflow:visible;">
+                            <div class="progress-bar" style="height:100%;width:0%;background:#4CAF50;border-radius:6px;transition: width 5s ease-out;"></div>
+                            <img class="progress-icon" src="${chrome.runtime.getURL("iconV2.png")}" alt="app icon" style="position:absolute;top:-5px;left:0;width:20px;height:20px;transition:left 5s ease-out;pointer-events:none;z-index:2;" />
+                        </div>
+                        <p style="margin:8px 0 0 0;padding-bottom:6px;color:#555;font-size:13px;">${tlang("请稍候，大约需要5秒","Please wait ~5 seconds")}</p>
+                    </div>
+                `;
+                document.body.appendChild(loadingModal);
+
+                // Start progress animation
+                setTimeout(() => {
+                    const bar = loadingModal.querySelector('.progress-bar');
+                    if (bar) bar.style.width = '100%';
+                    const icon = loadingModal.querySelector('.progress-icon');
+                    if (icon) icon.style.left = 'calc(100% - 20px)';
+                }, 50);
+
+                // Start removal while loading
+                chrome.runtime.sendMessage({ type: "bp-removeAllCalenderEvent"});
+
+                // After 5 seconds, proceed to unbind
+                setTimeout(() => {
+                    try { document.body.removeChild(loadingModal); } catch (e) {}
+                    unbindTeams();
+                }, 5000);
+            } else {
+                unbindTeams();
+                closeConfirm();
+            }
+        });
     })
     const exitBtn = modal.querySelector('#saveBtn');
     exitBtn.addEventListener('click', () => {

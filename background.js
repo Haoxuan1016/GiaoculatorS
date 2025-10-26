@@ -330,6 +330,9 @@ function M_checkOutdatedScore(){
                 }
             });
         }
+        if(diffDays > 0.1){//每2个小时刷新一次teams数据
+            M_StartMSFeatures();
+        }
     });
 }
 
@@ -1454,6 +1457,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     chrome.storage.local.set({ "MSrefresh_token": "" });
                 });
             break;
+        case "bp-removeAllCalenderEvent":
+            T_removeFromMSCalender("GCalcAutoSync_Class");
+            T_removeFromMSCalender("GCalcAutoSync_Tasks_XB");
+            T_removeFromMSCalender("GCalcAutoSync_Tasks_MS");
+            saveToChromeStorage("MS_BeingSynced",[]);
+            break;
         case "bp-openSettings":
             chrome.runtime.openOptionsPage();
             break;
@@ -1462,6 +1471,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
         case "bp-startSyncTeamsTask":
             T_startTeamsTaskSync();
+            break;
+        case "bp-refreshTeamsTask":
+            T_fetchTeamsUserClassesAndAssignments();
             break;
         case "bp-startSyncXBTask":
             T_startXBTaskSync();
@@ -2238,7 +2250,7 @@ async function T_SetAssignmentAlert_MSAssignment() {
                     title: "[Due] " + assignment.typeName,
                     id: assignment.id,
                     location: assignment.subjectName,
-                    content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.typeName}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p><a class="button" href="${assignment.webUrl}">${tlang("查看任务详细","Click here to see in Teams")}</a></p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none" >gcMark{${gcId}}</p></div>`,
+                    content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.typeName}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p><a class="button" href="${assignment.webUrl}">${tlang("查看任务详细","Click here to see in Teams")}</a></p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none;font-size: 0; color: transparent;" >gcMark{${gcId}}</p></div>`,
                     tag: "GCalcAutoSync_Tasks_MS",
                     reminderMinutesBeforeStart: 360
                 };
@@ -2331,10 +2343,10 @@ async function T_SetAssignmentAlert_XBAssignment() {
                     let event = {
                         startTime: startTime,
                         endTime: endTimeDate.toISOString(),
-                        title: "[Due] " + assignment.typeName,
+                        title: "[Due] " + assignment.name,
                         id: assignment.id,
                         location: assignment.subjectName,
-                        content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.name}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p>${tlang("请前往校宝查看","Please check in Xiaobao")}</p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none" >gcMark{${gcId}}</p></div>`,
+                        content: `<div class="container"> <h2>${tlang("🔔即将截止：","🔔Due Day Reminder:")}${assignment.name}</h2> <p>${assignment.subjectName}</p> <p>${tlang("截止日期：","Due at: ")}${endTimeUTC8}</p> <p>${tlang("请前往校宝查看","Please check in Xiaobao")}</p> <img src="https://x19.fp.ps.netease.com/file/68dcf74fd3235782242735a51XUFdMFK06" style=" right: -5%; position: absolute; top: -90px; "><p style="display:none;font-size: 0; color: transparent;" >gcMark{${gcId}}</p></div>`,
                         tag: "GCalcAutoSync_Tasks_XB",
                         reminderMinutesBeforeStart: 360
                     };
@@ -2662,7 +2674,7 @@ async function T_batchAddToMSCalender(events, accessToken) {
                         if (failedIndicesThisAttempt.length > 0) {
                                 console.log(`[T_BATCHADD]Failed indices (relative to current 20-size chunk): ${failedIndicesThisAttempt.join(',')}`);
                         }
-                        await saveBeingSynced(beingSynced);
+                        
 
                         attempts++;
                         if (nextPending.length > 0 && attempts < MAX_RETRY) {
@@ -2681,6 +2693,7 @@ async function T_batchAddToMSCalender(events, accessToken) {
 		overallFailed += finalFailed;
 
 		await delay(1000);
+        await saveBeingSynced(beingSynced);
 	}
 	return { amountOfSuccess: overallSuccess, amountOfFailed: overallFailed };
 }
@@ -2784,7 +2797,7 @@ async function T_SyncToTeamsCalender() {
 								endTime: endTime,
 								location: classInfo.playgroundName || '',
 								title: classInfo.name || '',
-								content: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding: 10px;">\n                            <p style=\"margin: 0 0 8px 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("老师", "Teacher")}】 \n                                <span style=\"font-weight: normal;\">\n                                ${classInfo.teacherList.map(t => t.name).join(', ')}\n                                </span>\n                            </p>\n                            <p style=\"margin: 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("班级", "Class")}】\n                                <span style=\"font-weight: normal;\">\n                                ${tlang(classInfo.classInfo.className, classInfo.classInfo.classEName)}\n                                </span>\n                            </p>\n                            </div><p style="display:none" >gcMark{${gcId}}</p>`,
+								content: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding: 10px;">\n                            <p style=\"margin: 0 0 8px 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("老师", "Teacher")}】 \n                                <span style=\"font-weight: normal;\">\n                                ${classInfo.teacherList.map(t => t.name).join(', ')}\n                                </span>\n                            </p>\n                            <p style=\"margin: 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("班级", "Class")}】\n                                <span style=\"font-weight: normal;\">\n                                ${tlang(classInfo.classInfo.className, classInfo.classInfo.classEName)}\n                                </span>\n                            </p>\n                            </div><p style="display:none;font-size: 0; color: transparent;" >gcMark{${gcId}}</p>`,
 								tag: 'GCalcAutoSync_Class'
 							}];
 						});
