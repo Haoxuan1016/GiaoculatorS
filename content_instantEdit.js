@@ -1,6 +1,12 @@
-﻿let forRibbon_lastHighScore = 999;
+let forRibbon_lastHighScore = 999;
 let forRibbon_lastUserScore = -1;
 let forRibbon_lastAvgScore = 999;
+
+const selectByPrefix = (prefix, root = document) =>
+    root.querySelector(`[class*="${prefix}"]`);
+
+const selectAllByPrefix = (prefix, root = document) =>
+    root.querySelectorAll(`[class*="${prefix}"]`);
 
 (function () {
     const TARGET_URL_PART = '/task/list/detail';
@@ -24,9 +30,9 @@ let forRibbon_lastAvgScore = 999;
         if (el) {
             obs.disconnect();
             if (
-              document.getElementsByClassName(
-                "ng-scope fe-components-xb-pagination-__item--2TJMqEWoq3wUhD7RGTCUPA fe-components-xb-pagination-__active--38NmY6BWhbJQuJwfItXtYi"
-              )[0]?.innerText !== "1"
+              document.querySelector(
+                '.ng-scope[class*="fe-components-xb-pagination-__item"][class*="fe-components-xb-pagination-__active"]'
+              )?.innerText !== "1"
             ) {
                 // Not first page, skip
                 return;
@@ -87,8 +93,8 @@ let forRibbon_lastAvgScore = 999;
   
 
 async function fun_scratchScore() {
-    const parentDiv = document.getElementsByClassName("fe-components-stu-app-task-detail-__middleItem--1DW5FAgpA9y2Sgz8UxIRt8 fe-components-stu-app-task-detail-__allItem--a5TghcQ70cF8KuTHc_wWG")[0].children[1];
-    const scoreDiv = parentDiv.querySelector('.fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx');
+    const parentDiv = selectByPrefix('fe-components-stu-app-task-detail-__middleItem').children[1];
+    const scoreDiv = parentDiv.querySelector('[class*="fe-components-stu-app-task-detail-__itemScore"]');
     
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -116,7 +122,7 @@ async function fun_scratchScore() {
 
     
 
-    document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style.opacity = 0;
+    document.querySelector('.ng-binding[class*="fe-components-stu-app-task-detail-__itemScore"]').style.opacity = 0;
 
     let guestMode = await ins_getFromChromeStorage('login_guest');
     let enabledScratch = await ins_getFromChromeStorage('user_preference');
@@ -125,7 +131,7 @@ async function fun_scratchScore() {
     
 
     if(enabledScratch==false){
-        document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style.opacity = 1;
+        document.querySelector('.ng-binding[class*="fe-components-stu-app-task-detail-__itemScore"]').style.opacity = 1;
         return;
     }
     
@@ -134,8 +140,8 @@ async function fun_scratchScore() {
         if(record==null){
             record = [];
         }
-        if(record.includes(document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__topTitle--2gFGMHSLuJgGq2PkFxoTGj")[0].innerText)){
-            document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style.opacity = 1;
+        if(record.includes(document.querySelector('.ng-binding[class*="fe-components-stu-app-task-detail-__topTitle"]').innerText)){
+            document.querySelector('.ng-binding[class*="fe-components-stu-app-task-detail-__itemScore"]').style.opacity = 1;
             return;
         }
     }
@@ -151,7 +157,7 @@ async function fun_scratchScore() {
         });
     }
 
-    document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style.opacity = 1;
+    document.querySelector('.ng-binding[class*="fe-components-stu-app-task-detail-__itemScore"]').style.opacity = 1;
     
     // Base paint of the mask (kept as-is)
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
@@ -345,7 +351,7 @@ async function fun_scratchScore() {
             if(record==undefined||record==null){
                 record = [];
             }
-            record.push(document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__topTitle--2gFGMHSLuJgGq2PkFxoTGj")[0].innerText);
+            record.push(document.querySelector('.ng-binding[class*="fe-components-stu-app-task-detail-__topTitle"]').innerText);
             ins_saveToChromeStorage( 'scratched_scores', record ).then(()=>{
                 console.log("Saved");
             });
@@ -408,7 +414,7 @@ async function fun_scratch_Homepage(){
         record = [];
     }
     try {
-        if(document.getElementsByClassName("ng-scope fe-components-xb-pagination-__item--2TJMqEWoq3wUhD7RGTCUPA fe-components-xb-pagination-__active--38NmY6BWhbJQuJwfItXtYi")[0].innerText!="1"){
+        if(document.querySelector('.ng-scope[class*="fe-components-xb-pagination-__item"][class*="fe-components-xb-pagination-__active"]').innerText!="1"){
             // Not first page, skip
             return;
         }
@@ -417,7 +423,7 @@ async function fun_scratch_Homepage(){
     }
     
     console.log("Scratch Record:",record);
-    let targetParent = document.getElementsByClassName("ng-scope fe-components-stu-app-task-list-__listItem--2LlZEXXtXjZzVCV4Ai9B6y");
+    let targetParent = document.querySelectorAll('.ng-scope[class*="fe-components-stu-app-task-list-__listItem"]');
     console.log("Found",targetParent.length,"items to scratch.");
     for(let i=0;i<targetParent.length;i++){
         perItem(i,initmode,guestMode);
@@ -431,7 +437,7 @@ async function fun_scratch_Homepage(){
 
     function perItem(index,initmode,guestMode){ 
 
-        let obj = document.getElementsByClassName("ng-scope fe-components-stu-app-task-list-__listItem--2LlZEXXtXjZzVCV4Ai9B6y")[index];
+        let obj = document.querySelectorAll('.ng-scope[class*="fe-components-stu-app-task-list-__listItem"]')[index];
         if(obj==undefined) return -1;
         let taskName = obj.querySelector('p[ng-class="styles.title"]').innerText.trim();
         let subjectName = obj.querySelector('p[ng-class="styles.subject"]').innerText.split("|")[0].trim();

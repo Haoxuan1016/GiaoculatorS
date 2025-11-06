@@ -1,4 +1,4 @@
-﻿let version = "1.1.1";
+let version = "1.1.1";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -20,10 +20,55 @@ function runWhenElementReady(selector, callback, interval, maxAttempts) {
 runWhenElementReady('link', diyHomepage, 10, 5);
 runWhenElementReady('link', diyHomepage, 100, 3);
 
+const selectByPrefix = (prefix, root = document) =>
+    root.querySelector(`[class*="${prefix}"]`);
+
+const selectAllByPrefix = (prefix, root = document) =>
+    root.querySelectorAll(`[class*="${prefix}"]`);
+
+const byClassPrefix = (prefix) => `[class*="${prefix}"]`;
+
+const normalizeSelector = (selector) =>
+    typeof selector === 'string'
+        ? selector.replace(/\.([A-Za-z0-9_-]+)--[A-Za-z0-9_-]{6,}/g, (_match, prefix) => byClassPrefix(prefix))
+        : selector;
+
+const querySelectorStable = (selector, root = document) =>
+    root.querySelector(normalizeSelector(selector));
+
+const querySelectorAllStable = (selector, root = document) =>
+    root.querySelectorAll(normalizeSelector(selector));
+
+const queryAllByClassNames = (classNames, root = document) => {
+    if (typeof classNames !== 'string') {
+        return [];
+    }
+
+    const classes = classNames.trim().split(/\s+/).filter(Boolean);
+    if (!classes.length) {
+        return [];
+    }
+
+    const selector = classes
+        .map((cls) => {
+            const [base, hash = ''] = cls.split('--');
+            if (hash.length >= 6) {
+                return byClassPrefix(base);
+            }
+            return `.${cls}`;
+        })
+        .join('');
+
+    return root.querySelectorAll(selector);
+};
+
+const queryByClassNames = (classNames, root = document) =>
+    queryAllByClassNames(classNames, root)[0] || null;
+
 function waitForElement() {
     let targetElement;
     try {
-        targetElement = document.getElementsByClassName("fe-components-stu-business-topbar-__profileItemBox--2Zu-vui7zBJ7o6w5lP-ugN")[0].childNodes[8];
+        targetElement = selectByPrefix('fe-components-stu-business-topbar-__profileItemBox').childNodes[8];
     } catch (error) {}
     if (targetElement) {
         setTimeout(function() {
@@ -49,11 +94,11 @@ function waitForElement() {
 }
 
 function addBtnBindings(){
-    document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].addEventListener('click', function() {
+    document.querySelector('.ng-binding.ng-scope[class*="fe-components-stu-business-topbar-__profileItem"]').addEventListener('click', function() {
         showTeamsMainPannelBtn();
     });
-    document.getElementsByClassName("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].addEventListener('click', function() {
-        document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].click();
+    document.querySelector('[class*="fe-components-stu-common-stu-arc-button-__arcbtn"][class*="fe-components-stu-common-stu-arc-button-__current"]').addEventListener('click', function() {
+        document.querySelector('.ng-binding.ng-scope[class*="fe-components-stu-business-topbar-__profileItem"]').click();
     });
 
 }
@@ -61,7 +106,7 @@ function addBtnBindings(){
 if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
     waitForElement(); // Start polling immediately
     setTimeout(function() {
-        if(!document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR")[0]){
+        if(!document.querySelector('.ng-binding[class*="fe-components-stu-business-login-enter-box-__forgetLink"]')){
             send_comp_msg("bp-checkOutdatedScore","1",0);
         }
 
@@ -75,7 +120,7 @@ if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
 }
 
 setInterval(function() {
-    if (!document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR")[0]) {
+    if (!document.querySelector('.ng-binding[class*="fe-components-stu-business-login-enter-box-__forgetLink"]')) {
       send_comp_msg("bp-checkOutdatedScore", "1", 0);
     }
   }, 300000);
@@ -95,10 +140,10 @@ observeUrlChange({
 
 function startobserveDynamicScoreTarget(){
     observeTarget(
-        "fe-components-stu-app-realtime-list-__listItemBox--1RuNIoOoFIYPl4lXa4x2kS",
+        'fe-components-stu-app-realtime-list-__listItemBox',
         updateContent
     );
-    observeTarget("ng-scope fe-components-stu-app-realtime-list-__item--15ati0uVXaVfuWcqrnMUMw fe-components-stu-app-realtime-list-__listItem--3XdXNo9J8YyN2Z4GL0lpGz",
+    observeTarget(`.ng-scope${byClassPrefix('fe-components-stu-app-realtime-list-__item')}${byClassPrefix('fe-components-stu-app-realtime-list-__listItem')}`,
         updateContent
     );
 
@@ -108,7 +153,7 @@ function startobserveScoreHides(){
         console.log(settings);
         if(settings.user_preference.autoHide){
             observeTarget(
-                "fe-components-stu-app-task-list-__listItemBox--3elHWcZSeppt-hG2vNGaZz",
+                'fe-components-stu-app-task-list-__listItemBox',
                 hideAssignments
             );
         }
@@ -118,22 +163,37 @@ function startobserveScoreHides(){
 
 
 
+function resolveSelector(target) {
+    if (typeof target !== 'string') {
+        return null;
+    }
+
+    if (target.startsWith('.') || target.startsWith('#') || target.includes('[') || target.includes(' ')) {
+        return target;
+    }
+
+    return byClassPrefix(target);
+}
+
 function observeTarget(targetClass, callback, redotimes = 0, observedClasses = new Set()) {
+    const selector = resolveSelector(targetClass);
+    if (!selector) {
+        return;
+    }
+
     // 如果已经存在触发器，则直接返回
-    if (observedClasses.has(targetClass)) {
-        //console.log(`[observeTarget] Already observing: ${targetClass}`);
+    if (observedClasses.has(selector)) {
         return;
     }
 
     // 查找目标节点，仅获取第一个匹配元素
-    const targetNode = document.getElementsByClassName(targetClass)[0];
+    const targetNode = querySelectorStable(selector);
 
     if (targetNode) {
         // 创建 MutationObserver
         const observer = new MutationObserver((mutationsList) => {
             for (const mutation of mutationsList) {
                 if (mutation.target === targetNode) {
-                   // console.log(`[observeTarget] Change detected in: ${targetClass}`);
                     callback(); // 执行回调函数
                     break;
                 }
@@ -148,8 +208,7 @@ function observeTarget(targetClass, callback, redotimes = 0, observedClasses = n
         });
 
         // 记录为已观察
-        observedClasses.add(targetClass);
-        //console.log(`[observeTarget] Now observing: ${targetClass}`);
+        observedClasses.add(selector);
     } else {
         // 如果未找到目标，重试机制
         if (redotimes < 5) {
@@ -159,7 +218,6 @@ function observeTarget(targetClass, callback, redotimes = 0, observedClasses = n
                 observeTarget(targetClass, callback, redotimes + 1, observedClasses);
             }, retryDelay);
         } else {
-            //console.error(`[observeTarget] Max retries reached for: ${targetClass}.`);
         }
     }
 }
@@ -472,7 +530,7 @@ function sendFloatingMessage(message, type){
 }   
 
 // =============================== 悬浮窗代码结束
-if (window.location.hostname.endsWith("schoolis.cn") && window.location.pathname !== "/" && document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR").length > 0) {
+if (window.location.hostname.endsWith("schoolis.cn") && window.location.pathname !== "/" && queryAllByClassNames("ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR").length > 0) {
     window.location.href = window.location.protocol + "//" + window.location.hostname;
   }
 
@@ -517,7 +575,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
                 //do nothing for now
             } else if (type == "bp-observeDynamicScore"){
                 observeTarget(
-                    "fe-components-stu-app-realtime-list-__listItemBox--1RuNIoOoFIYPl4lXa4x2kS",
+                    'fe-components-stu-app-realtime-list-__listItemBox',
                     updateContent
                 );
             } else if (type == "MSPanel_showSyncing"){
@@ -701,7 +759,7 @@ async function showGPATip(){
     gpaNotClaced();
     let smsId;
     try {
-        smsId = await getIdBySemester(document.getElementsByClassName("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
+        smsId = await getIdBySemester(queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
     } catch (e) {
         smsId = -1;
     }
@@ -731,7 +789,7 @@ async function showGPATip(){
 async function beforeshowGPAbox(){
     console.log("RUNNING beforeshowGPAbox");
     let smsId;
-    smsId = await getIdBySemester(document.getElementsByClassName("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
+    smsId = await getIdBySemester(queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
     if (smsId === -1) {
         return; // Handle error case if getIdBySemester fails, if needed
     }
@@ -743,7 +801,7 @@ async function beforeshowGPAbox(){
     });
 
     if(storageData[`gpa${smsId}`] !== undefined){
-        document.getElementsByClassName("ng-scope fe-components-stu-app-realtime-list-__item--15ati0uVXaVfuWcqrnMUMw fe-components-stu-app-realtime-list-__listItem--3XdXNo9J8YyN2Z4GL0lpGz")[0].click();
+        queryAllByClassNames("ng-scope fe-components-stu-app-realtime-list-__item--15ati0uVXaVfuWcqrnMUMw fe-components-stu-app-realtime-list-__listItem--3XdXNo9J8YyN2Z4GL0lpGz")[0].click();
         showGPABox();
 
         //sendInfotip(tlang("计算的GPA仅供参考，可能存在误差<br><br>详见：<a style='color:#cccccc;text-decoration:underline' href='https://g2h8ru7041.feishu.cn/docx/RLXdd0ZeuogSwzx1R3KcwgElnMg?from=from_copylink'>GPA计算说明</a>","The calculated GPA is for reference only and may contain errors.<br><br>For details, see：<a style='color:#cccccc;text-decoration:underline' href='https://g2h8ru7041.feishu.cn/docx/RLXdd0ZeuogSwzx1R3KcwgElnMg?from=from_copylink'>Description</a>"));
@@ -756,7 +814,7 @@ function updateContent() {
     showGPATip();
 
     setTimeout(() => {
-        var element = document.getElementsByClassName("ng-scope fe-components-stu-app-realtime-list-__listItem--3XdXNo9J8YyN2Z4GL0lpGz fe-components-stu-app-realtime-list-__border--28HM0G_CwJuVpXrawp7ETW")[0];
+        var element = queryAllByClassNames("ng-scope fe-components-stu-app-realtime-list-__listItem--3XdXNo9J8YyN2Z4GL0lpGz fe-components-stu-app-realtime-list-__border--28HM0G_CwJuVpXrawp7ETW")[0];
         if (element) {
             element.addEventListener('click', function(event) {
                 if (!element.disabled) { // 检查按钮是否处于禁用状态，如果不是才执行
@@ -779,7 +837,7 @@ function updateContent() {
     console.log("RUNNING updateContent")
 
     try {
-        const targetElement = document.getElementsByClassName('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
+        const targetElement = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
         if (targetElement) { 
             for (cnt=0;cnt<targetElement.length;cnt++){
                 target = targetElement[cnt];
@@ -797,7 +855,7 @@ function updateContent() {
                     if (parentDiv) {
                         parentDiv.addEventListener('click', function () {
                             // 提取subjectId
-                            const gradeNode = parentDiv.querySelector('.fe-components-stu-app-realtime-list-__grade--2wJch67b4uOYNPgwNpRCm8');
+                            const gradeNode = querySelectorStable('.fe-components-stu-app-realtime-list-__grade--2wJch67b4uOYNPgwNpRCm8', parentDiv);
                             let subjectId = null;
                             if (gradeNode) {
                                 const text = gradeNode.textContent || '';
@@ -807,7 +865,7 @@ function updateContent() {
                                 }
                             }
                             // 获取学期id并调用showGPAcount
-                            getIdBySemester(document.getElementsByClassName("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value).then(semesterid => {
+                            getIdBySemester(queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value).then(semesterid => {
                                 showGPAcount(0, { smsId: semesterid, subjectId: subjectId });
                             });
                         });
@@ -823,7 +881,7 @@ function updateContent() {
         }
     } catch (error) {}
     setTimeout(() => {
-        const targetElement = document.getElementsByClassName('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
+        const targetElement = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
         if (targetElement) { 
             for (cnt=0;cnt<targetElement.length;cnt++){
                 target = targetElement[cnt];
@@ -842,13 +900,13 @@ function hideScores(scorelim) {
 
 
 
-  const elements = document.getElementsByClassName('fe-components-stu-app-realtime-list-__content--2keQZ3lLv0HwiGHcw7cEeU');
+  const elements = queryAllByClassNames('fe-components-stu-app-realtime-list-__content--2keQZ3lLv0HwiGHcw7cEeU');
   for (let element of elements) {
-    const scoreNumElement = element.querySelector('.fe-components-stu-app-realtime-list-__scoreNum--toPOhGj5JXhKFaxKzn7G1');
+    const scoreNumElement = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreNum--toPOhGj5JXhKFaxKzn7G1', element);
     if (scoreNumElement) {
       const score = parseFloat(scoreNumElement.innerText);
       if (score < scorelim) {
-        const scoreInfoElement = element.querySelector('.fe-components-stu-app-realtime-list-__scoreInfo--1d-D_GnPEaK1HTrcgeNURt');
+        const scoreInfoElement = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreInfo--1d-D_GnPEaK1HTrcgeNURt', element);
         console.log(scoreNumElement,scoreInfoElement);
         if (scoreInfoElement!=null) {
             console.log(scoreInfoElement,"is not NULL");
@@ -903,10 +961,10 @@ async function hideAssignments() {
     if(guestMode==true){
         scorelim=101;
     }
-    const elements = document.getElementsByClassName('ng-scope fe-components-stu-app-task-list-__listItem--2LlZEXXtXjZzVCV4Ai9B6y');
+    const elements = queryAllByClassNames('ng-scope fe-components-stu-app-task-list-__listItem--2LlZEXXtXjZzVCV4Ai9B6y');
     for (let element of elements) {
         try {
-            var scoreNumElement = element.querySelector('.fe-components-stu-business-task-list-item-__taskScore--13ruwhA6IFpxEaXteLRQco');
+            var scoreNumElement = querySelectorStable('.fe-components-stu-business-task-list-item-__taskScore--13ruwhA6IFpxEaXteLRQco', element);
             var totalScoreNum = (element.querySelector('span.ng-binding.ng-scope').textContent.match(/\d+/)[0]) * 1.0;
             if (scoreNumElement) {
                 //var score = parseFloat(scoreNumElement.innerText) +"|" +totalScoreNum;
@@ -915,7 +973,7 @@ async function hideAssignments() {
                     // 这个判断多余，可以考虑删除后面的代码
                     scoreNumElement.innerHTML = '<img src="' + chrome.runtime.getURL("res/disable.png") + '" alt="Disabled" style="width: 70%;padding-top:20px;" />';
             
-                    const scoreInfoElement = element.querySelector('.fe-components-stu-app-realtime-list-__scoreInfo--1d-D_GnPEaK1HTrcgeNURt');
+                    const scoreInfoElement = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreInfo--1d-D_GnPEaK1HTrcgeNURt', element);
                     if (scoreInfoElement) {
                         scoreInfoElement.remove();
                     }
@@ -973,7 +1031,7 @@ function updateContent_DetailPage() {
     
     try {
         console.log("RUNNING updateDP")
-        const target = document.getElementsByClassName('fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei')[1];
+        const target = queryAllByClassNames('fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei')[1];
         if(target.children[1].innerText=="1970-01-01 08:00"||target.children[1].innerText=="2008-10-16 00:00"){
             target.children[0].innerText=tlang("Giaoculator获取的数据","Giaoculator fetched data");
             
@@ -998,7 +1056,7 @@ function engPage_opti(redotimes){
     }
     setTimeout(() => {
         console.log("RUNNING englishOpi")
-        const targetElement2 = document.getElementsByClassName('ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i');    
+        const targetElement2 = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i');    
         if (targetElement2[0]) { 
             target = targetElement2[0];
             if(target.innerText=="Grade Details"){
@@ -1011,7 +1069,7 @@ function engPage_opti(redotimes){
     }, 10);
     setTimeout(() => {
         console.log("RUNNING englishOpi")
-        const targetElement2 = document.getElementsByClassName('ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i');    
+        const targetElement2 = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i');    
         if (targetElement2[0]) { 
             target = targetElement2[0];
             if(target.innerText=="Grade Details"){
@@ -1074,14 +1132,14 @@ document.onkeydown = function(e) {//快捷键
         try {
             document.getElementsByClassName("fc-prev-button fc-button fc-state-default fc-corner-left fc-corner-right")[0].click();
         } catch (e) { }
-        try{document.getElementsByClassName("ng-scope fe-components-xb-pagination-__pageNumber--1VqmLfGo3J_SMKjULyiFzU fe-components-xb-pagination-__leftIcon--1xTQmlKB0ldX-7LWrTevD4")[0].click();}catch{}
+        try{queryAllByClassNames("ng-scope fe-components-xb-pagination-__pageNumber--1VqmLfGo3J_SMKjULyiFzU fe-components-xb-pagination-__leftIcon--1xTQmlKB0ldX-7LWrTevD4")[0].click();}catch{}
     } else if (e.key === 'ArrowRight' && (currentWindow.startsWith("https://") && currentWindow.includes(".schoolis.cn/Home#!/task/list") || (currentWindow.startsWith("https://") && currentWindow.includes(".schoolis.cn/Home#!/schedule")))) {
         try {
             document.getElementsByClassName("fc-next-button")[0].click();
         } catch (e) {
             console.log("Notfound");
         }
-        try{document.getElementsByClassName("ng-scope fe-components-xb-pagination-__pageNumber--1VqmLfGo3J_SMKjULyiFzU fe-components-xb-pagination-__rightIcon--ZSZeXHkbdqtWaqpsNXVn-")[0].click();}catch{}
+        try{queryAllByClassNames("ng-scope fe-components-xb-pagination-__pageNumber--1VqmLfGo3J_SMKjULyiFzU fe-components-xb-pagination-__rightIcon--ZSZeXHkbdqtWaqpsNXVn-")[0].click();}catch{}
     } else if (e.key === 'ArrowDown' && currentWindow.startsWith("https://") && currentWindow.includes(".schoolis.cn/Home#!/realtime/list")) {
         simulateClickRefresh(1);
     } else if (e.key === 'ArrowUp' && currentWindow.startsWith("https://") && currentWindow.includes(".schoolis.cn/Home#!/realtime/list")) {
@@ -1092,7 +1150,7 @@ document.onkeydown = function(e) {//快捷键
 
 function simulateClickLogin() {
     try{
-        document.getElementsByClassName("fe-components-stu-business-login-enter-box-__signBtn--2VrsqhNGgcjYTh7LuAGzve")[0].click();
+        queryAllByClassNames("fe-components-stu-business-login-enter-box-__signBtn--2VrsqhNGgcjYTh7LuAGzve")[0].click();
     }catch{
 
     }
@@ -1101,7 +1159,7 @@ function simulateClickLogin() {
 function simulateClickBar(keyNum) {
     if(true){
         try{
-            document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[keyNum].click();
+            queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[keyNum].click();
         }catch{
     
         }
@@ -1111,8 +1169,8 @@ function simulateClickBar(keyNum) {
 function changeBarname(keyNum, prefix) {
     if(true){
         try{
-            var name = document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[keyNum].innerText;
-            document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[keyNum].innerText = name + prefix;
+            var name = queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[keyNum].innerText;
+            queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[keyNum].innerText = name + prefix;
         }catch{
     
         }
@@ -1121,18 +1179,18 @@ function changeBarname(keyNum, prefix) {
 
 function simulateClickLogout() {
     if(window.location.href === "https://tsinglanstudent.schoolis.cn/Home#!/task/list/detail"){
-        document.getElementsByClassName("ng-binding ng-scope fe-components-xb-location-__router--nsd2ZgXX2cpKLO-r5y7lv")[0].click();
+        queryAllByClassNames("ng-binding ng-scope fe-components-xb-location-__router--nsd2ZgXX2cpKLO-r5y7lv")[0].click();
     }
     
     else{
         try{
-            document.getElementsByClassName("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[0].click();
+            queryAllByClassNames("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[0].click();
         }catch{
             try {
-                document.getElementsByClassName("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[1].click();
+                queryAllByClassNames("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[1].click();
             } catch (error) {
                 try{
-                    document.getElementsByClassName("ng-binding fe-components-stu-business-topbar-profile-__liBtn--2o4Tw8hObEQPDm7WM_T2us")[1].click();
+                    queryAllByClassNames("ng-binding fe-components-stu-business-topbar-profile-__liBtn--2o4Tw8hObEQPDm7WM_T2us")[1].click();
                 }catch{
                     try {
                         document.getElementsByClassName("logout hide")[0].click();
@@ -1146,9 +1204,9 @@ function simulateClickLogout() {
     }
 }
 function simulateClickRefresh(posChange) {
-    var targtext = document.getElementsByClassName("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value
+    var targtext = queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value
     try{
-        targlists = document.getElementsByClassName("ng-isolate-scope fe-components-xb-pull-btn-__t_overflow--3OZPYj_1Z20EZZbQur_fl9");
+        targlists = queryAllByClassNames("ng-isolate-scope fe-components-xb-pull-btn-__t_overflow--3OZPYj_1Z20EZZbQur_fl9");
         for(targ in targlists){
             if(targlists[targ].getAttribute('xb-title') == targtext){
                 targlists[targ*1.0 +posChange].click();
@@ -1435,7 +1493,7 @@ function changeHideState(){
     console.log(tmp_stopHide);
     tmp_stopHide = !tmp_stopHide;
     showHideButtonAtHome();
-    document.getElementsByClassName("fe-components-xb-pagination-__active--38NmY6BWhbJQuJwfItXtYi")[0].click();
+    queryAllByClassNames("fe-components-xb-pagination-__active--38NmY6BWhbJQuJwfItXtYi")[0].click();
     return;
     // 设置显示状态为相反
     chrome.storage.local.get('user_preference', function(tmp) {
@@ -1465,9 +1523,9 @@ function showHideButton(tmp){
     //data = tmp.user_preference;
     hidestate = tmp
 
-    // var div = document.querySelector('.fe-components-stu-common-stu-select-bar-__selectDiv--1TuYczJu6_9rrSCwO58S-d');
+    // var div = querySelectorStable('.fe-components-stu-common-stu-select-bar-__selectDiv--1TuYczJu6_9rrSCwO58S-d');
     // 获取ng-binding fe-components-xb-rest-btn-__cancel--GAK6A0SPZh0p3LOnXTukB的button元素，并将里面的内容替换为img
-    button = document.querySelector('.fe-components-xb-rest-btn-__cancel--GAK6A0SPZh0p3LOnXTukB');
+    button = querySelectorStable('.fe-components-xb-rest-btn-__cancel--GAK6A0SPZh0p3LOnXTukB');
     url = chrome.runtime.getURL(hidestate==true ? "res/visOn.svg" : "res/visOff.svg"); // 你的SVG文件路径
     // button.innerHTML = '<img src="' + url + '" alt="*" style="height: 20px; width: 25px; margin-top:5px; fill: #ccc" />';
     if (hidestate==true){
@@ -1487,7 +1545,7 @@ function showHideButton(tmp){
 function showStateAtLoginPageMain(tmp,estate,isGuest) {
     var langSet = (navigator.language || navigator.userLanguage).startsWith('zh') ? 'cn' : 'en';
     var content;
-    var div = document.querySelector('.fe-components-stu-business-login-enter-box-__signBtnWrap--1hC-pSiXWu5_WJuSPKGEzQ');
+    var div = querySelectorStable('.fe-components-stu-business-login-enter-box-__signBtnWrap--1hC-pSiXWu5_WJuSPKGEzQ');
     if (!div) {
         console.log('指定的div未找到');
         return;
@@ -1601,7 +1659,7 @@ function diyHomepage(){
             return;
         }
         try {
-            var targ = document.getElementsByClassName("fe-components-stu-business-login-enter-box-__schoolBackground--2S3KJugj_l_m7T5hRdY_cv")[0];
+            var targ = queryAllByClassNames("fe-components-stu-business-login-enter-box-__schoolBackground--2S3KJugj_l_m7T5hRdY_cv")[0];
             if(source.includes(".mp4"))  {
                 targ.children[0].innerHTML = "<div id='video-wrapper' style='width: 100%; height: 100%; position: relative; overflow: hidden;'><video style='width: 100%; height: 100%; object-fit: cover;' autoplay loop muted><source src='"+source+"' type='video/mp4'>Your browser does not support the video tag.</video></div>";
             // } else if(source.includes(".jpg")||source.includes("image")||source.includes(".jpeg")||source.includes(".png")||source.includes(".webp")||source.includes(".svg")||source.includes("tiff")||source.includes("bmp")||source.includes("gif")){
@@ -1641,14 +1699,14 @@ function gpaClaced(){
         var langSet = (navigator.language || navigator.userLanguage).startsWith('zh') ? 'cn' : 'en';
         if(langSet == 'cn'){
             setTimeout(() => {
-                document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA (计算)";
+                queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA (计算)";
             }, 20);
-            document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA (计算)";
+            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA (计算)";
         }else{
             setTimeout(() => {
-                document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA (Calced)";
+                queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA (Calced)";
             }, 20);
-            document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA (Calced)";
+            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA (Calced)";
         }
         
         
@@ -1660,9 +1718,9 @@ function gpaNotClaced(){
     try {
     var langSet = (navigator.language || navigator.userLanguage).startsWith('zh') ? 'cn' : 'en';
     if(langSet != 'cn'){
-        document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA";
+        queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA";
     }else{
-        document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA";
+        queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA";
     }}catch{}
 }
 
@@ -1695,7 +1753,7 @@ function beautyLoginPage(srcData,redotimes){
 
     try {
         if(curretSchool().includes("tsinglan")){ 
-                document.getElementsByClassName('ng-scope fe-components-stu-business-login-enter-box-__headMain--7bzuRu-Sq5O2sOCFgPNQH')[0].children[0].src = chrome.runtime.getURL(colormode?"res/tsLogo_D.png":"res/tsLogo_W.png");
+                queryAllByClassNames('ng-scope fe-components-stu-business-login-enter-box-__headMain--7bzuRu-Sq5O2sOCFgPNQH')[0].children[0].src = chrome.runtime.getURL(colormode?"res/tsLogo_D.png":"res/tsLogo_W.png");
         }
         if(!colormode){
             document.getElementById("autoHideState").children[1].style.color="#E4E4E4"
@@ -1719,21 +1777,21 @@ function beautyLoginPage(srcData,redotimes){
 
         setTimeout(() => {
             try {//验证码适配
-                let codeInput=document.getElementsByClassName("fe-components-stu-business-login-enter-box-__inputWrap--2OI0SgF-iDEHZborbYzrNZ fe-components-stu-business-login-enter-box-__loginAccount--V6OxcxzYg1Kv38n9KjsDg fe-components-stu-business-login-enter-box-__codeAccount--1v5pY_k1CJAvtvhBeacNLV")[0];
+                let codeInput=queryAllByClassNames("fe-components-stu-business-login-enter-box-__inputWrap--2OI0SgF-iDEHZborbYzrNZ fe-components-stu-business-login-enter-box-__loginAccount--V6OxcxzYg1Kv38n9KjsDg fe-components-stu-business-login-enter-box-__codeAccount--1v5pY_k1CJAvtvhBeacNLV")[0];
                 codeInput.children[0].outerHTML="<span>";
             } catch (e) {}
         }, 300);
 
         try {//验证码适配
-            let codeInput=document.getElementsByClassName("fe-components-stu-business-login-enter-box-__inputWrap--2OI0SgF-iDEHZborbYzrNZ fe-components-stu-business-login-enter-box-__loginAccount--V6OxcxzYg1Kv38n9KjsDg fe-components-stu-business-login-enter-box-__codeAccount--1v5pY_k1CJAvtvhBeacNLV")[0];
+            let codeInput=queryAllByClassNames("fe-components-stu-business-login-enter-box-__inputWrap--2OI0SgF-iDEHZborbYzrNZ fe-components-stu-business-login-enter-box-__loginAccount--V6OxcxzYg1Kv38n9KjsDg fe-components-stu-business-login-enter-box-__codeAccount--1v5pY_k1CJAvtvhBeacNLV")[0];
             codeInput.children[0].outerHTML="<span>";
-            document.getElementsByClassName("fe-components-stu-business-login-enter-box-__accountContainer--22PmjI_OEsahZLiUEgL4zr")[0].style.paddingTop="10px";
+            queryAllByClassNames("fe-components-stu-business-login-enter-box-__accountContainer--22PmjI_OEsahZLiUEgL4zr")[0].style.paddingTop="10px";
         } catch (e) {
             
         }
         try {
-            if(document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__another--2h0L224JEWaxwWm501-8Vi")[0].innerText.length>1){
-                document.getElementsByClassName("fe-components-stu-business-login-enter-box-__accountContainer--22PmjI_OEsahZLiUEgL4zr")[0].style.paddingTop="10px";
+            if(queryAllByClassNames("ng-binding fe-components-stu-business-login-enter-box-__another--2h0L224JEWaxwWm501-8Vi")[0].innerText.length>1){
+                queryAllByClassNames("fe-components-stu-business-login-enter-box-__accountContainer--22PmjI_OEsahZLiUEgL4zr")[0].style.paddingTop="10px";
             }
         } catch (e) {}
 
@@ -1753,7 +1811,7 @@ function beautyLoginPage(srcData,redotimes){
                 return;
             }
             if(!loginPageSrc.includes("bing.biturl.top/?res")){
-                document.getElementsByClassName("ng-scope fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0")[0].style.backgroundImage = "url("+loginPageSrc+")";
+                queryAllByClassNames("ng-scope fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0")[0].style.backgroundImage = "url("+loginPageSrc+")";
                 return;
             }
             // 图片：BING
@@ -1821,7 +1879,7 @@ function beautyLoginPage(srcData,redotimes){
             // 2. 获取本地缓存的 “上一次的Base64图”
             chrome.storage.local.get(["lastImg"], async (res) => {
                 const oldBase64 = res.lastImg;
-                const bgElem = document.querySelector(".ng-scope.fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0");
+                const bgElem = querySelectorStable(".ng-scope.fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0");
 
                 if (!bgElem) return; // 没找到目标元素，直接退出
 
@@ -1913,16 +1971,16 @@ function beautyLoginPage(srcData,redotimes){
     }
     try {
         if(!colormode){
-            document.getElementsByClassName("fe-components-directive-input-clear-__closeIcon--1-4h2qP26t0bSzIiZPJxT0")[0].remove()
-            document.getElementsByClassName("fe-components-directive-input-clear-__closeIcon--1-4h2qP26t0bSzIiZPJxT0")[0].remove()
+            queryAllByClassNames("fe-components-directive-input-clear-__closeIcon--1-4h2qP26t0bSzIiZPJxT0")[0].remove()
+            queryAllByClassNames("fe-components-directive-input-clear-__closeIcon--1-4h2qP26t0bSzIiZPJxT0")[0].remove()
         }
     } catch (error) {
         
     }
     setTimeout(() => {
         try {
-            if(document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__another--2h0L224JEWaxwWm501-8Vi")[0].innerText.length>1){
-                document.getElementsByClassName("fe-components-stu-business-login-enter-box-__accountContainer--22PmjI_OEsahZLiUEgL4zr")[0].style.paddingTop="10px";
+            if(queryAllByClassNames("ng-binding fe-components-stu-business-login-enter-box-__another--2h0L224JEWaxwWm501-8Vi")[0].innerText.length>1){
+                queryAllByClassNames("fe-components-stu-business-login-enter-box-__accountContainer--22PmjI_OEsahZLiUEgL4zr")[0].style.paddingTop="10px";
             }
         } catch (e) {}
     }, 1000);
@@ -1932,7 +1990,7 @@ function beautyLoginPage(srcData,redotimes){
 // 替换任务统计处的文字
 function replaceTaskStat(text) {
     // ng-binding fe-components-stu-app-task-stat-__containerBody--37aNor2CicrLBH0qmwwofX
-    document.getElementsByClassName("ng-binding fe-components-stu-app-task-stat-__containerBody--37aNor2CicrLBH0qmwwofX")[0].innerText = text;
+    queryAllByClassNames("ng-binding fe-components-stu-app-task-stat-__containerBody--37aNor2CicrLBH0qmwwofX")[0].innerText = text;
 }
 
 function directDownloadFile() {
@@ -1981,8 +2039,8 @@ function hideOriginalShowScoreDetail(){
     <h4 style="text-align: center;margin-bottom: 10px;font-size: 1.2em;padding-top: 49px;padding-bottom: 37px;">${tlang("该科目成绩已在任务预测模式中修改，请进入任务预测模式查看","The grade for this subject has been modified. Please enter task prediction mode to view it.")}</h4>
     </div>`
 
-    document.getElementsByClassName("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0].children[0].remove();
-    document.getElementsByClassName("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0].children[0].innerHTML=htmlContent;
+    queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0].children[0].remove();
+    queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0].children[0].innerHTML=htmlContent;
 
 }
 function showGPAcount(redotimes,data){
@@ -1994,12 +2052,12 @@ function showGPAcount(redotimes,data){
             return;
         }
         var tiptext;
-        let className = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText;
-        let subjectName = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__basicInfoItemValue--3Zx2X_CcFbD3XBxLp_NeFt")[0].innerText;
+        let className = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText;
+        let subjectName = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__basicInfoItemValue--3Zx2X_CcFbD3XBxLp_NeFt")[0].innerText;
         let totalInfo = className + subjectName;
         let excludeList_LowWeight = ["Fine Art","IT","Ele","Drama","Chinese Painting","Architectural","Dance","Percussion","Vocal","Media","Programming","Spanish","Philosophy","Skills","Journalism","Creative"];
         let excludeList_NotCNT = ["TSSA","IELTS","TOFEL","Student","Clubs","Homeroom"];
-        let categoryLists = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel--IDO2v_3UsPFqDDV9iQ2ml");
+        let categoryLists = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel--IDO2v_3UsPFqDDV9iQ2ml");
         if(totalInfo.includes("Drama")){
             showGB = false;
         }
@@ -2020,7 +2078,7 @@ function showGPAcount(redotimes,data){
             tiptext=tlang("该科目正常计入GPA计算","This Subject Weights 1 in GPA Calculation")
         }
 
-        if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
+        if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
             tiptext=tlang("以上为GPA（计算）所包含科目","Subjects included in GPA calculation")
         }else{
             getFromChromeStorage(`${data.smsId}|${data.subjectId}|CustomAssignmentList`).then((custom) => {
@@ -2042,7 +2100,7 @@ function showGPAcount(redotimes,data){
             }
         }
         let newHtml="<ul id='gcalc_gpacntstate' ng-class='[styles.scoreListItem,commonStyles.clearFix]' class='fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <!-- ngRepeat: items in $ctrl.evaluationProjectList --><!-- end ngRepeat: items in $ctrl.evaluationProjectList --><li ng-repeat='items in $ctrl.evaluationProjectList' class='ng-scope'> <ul ng-class='commonStyles.clearFix' ng-click='toggleChildItem($index)' class='fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <li ng-class='[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]' class='ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel--IDO2v_3UsPFqDDV9iQ2ml' style='font-size:"+tlang(13,11)+"px'>"+tiptext+"</li> <li ng-class='[styles.scoreListItemWeight, styles.scoreListItemScoreWeight]' class='ng-binding fe-components-stu-app-realtime-list-__scoreListItemWeight--285HojRL7boCDLSqVG3jB-'></li> <li ng-class='[styles.scoreListItemScore, styles.scoreListItemScoreWeight]' id='gcalc_diyboxbtn' class='fe-components-stu-app-realtime-list-__scoreListItemScore--1SnqOFUX5PHAR3L-RwXhkl'> <span class='ng-binding'></span> <!-- ngIf: items.evaluationProjectList.length>0 && items.showChild --> <!-- ngIf: items.evaluationProjectList.length>0 && !items.showChild --> </li> </ul> </li></ul>"
-        let targetDiv = document.querySelector('.fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c');
+        let targetDiv = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c');
         if (targetDiv) {
             targetDiv.insertAdjacentHTML('beforeend', newHtml);
             
@@ -2076,17 +2134,17 @@ function tlang(chi,eng){
 
 function hidestudentInfo(){
     try {
-        document.getElementsByClassName("fe-components-stu-business-head-img-__faceRadius--1KnMrEFLUQRin87ps3YG_k")[0].src=chrome.runtime.getURL("res/settings.svg");
-        document.getElementsByClassName("fe-components-stu-business-topbar-profile-__User--2nAN-ZibOa7TaBGcERbXX0")[0].remove();
-        document.getElementsByClassName("fe-components-stu-business-topbar-profile-__navUserBox--XXkgBpUL2yMAg1-Bz8tLq")[0].style="height:10px";
+        queryAllByClassNames("fe-components-stu-business-head-img-__faceRadius--1KnMrEFLUQRin87ps3YG_k")[0].src=chrome.runtime.getURL("res/settings.svg");
+        queryAllByClassNames("fe-components-stu-business-topbar-profile-__User--2nAN-ZibOa7TaBGcERbXX0")[0].remove();
+        queryAllByClassNames("fe-components-stu-business-topbar-profile-__navUserBox--XXkgBpUL2yMAg1-Bz8tLq")[0].style="height:10px";
     } catch (error) {}
-    try {document.getElementsByClassName("fe-components-stu-business-topbar-profile-edit-__StatisticsTabItem--CudXhV9FC828VnLP4xeqJ")[1].remove()} catch (error) {}
-    try {document.getElementsByClassName("fe-components-stu-app-task-detail-__topInfoLi---LQyncvlBCIHhDzj4LFAn fe-components-stu-app-task-detail-__topInfo--2dj7QXyKxrcGchkM3UQrFK fe-components-stu-app-task-detail-__studentInfo--3pYOqsjP22Jx0AnmEkK9HR")[0].remove()} catch (error) {}
+    try {queryAllByClassNames("fe-components-stu-business-topbar-profile-edit-__StatisticsTabItem--CudXhV9FC828VnLP4xeqJ")[1].remove()} catch (error) {}
+    try {queryAllByClassNames("fe-components-stu-app-task-detail-__topInfoLi---LQyncvlBCIHhDzj4LFAn fe-components-stu-app-task-detail-__topInfo--2dj7QXyKxrcGchkM3UQrFK fe-components-stu-app-task-detail-__studentInfo--3pYOqsjP22Jx0AnmEkK9HR")[0].remove()} catch (error) {}
 }
 
 function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
     let btntext = tlang("进入任务预测","Enter Edit Mode")
-    if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
+    if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
         btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
     }
     let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; padding: 0px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
@@ -2094,7 +2152,7 @@ function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
     
     document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
     document.getElementById("gcalc_diyboxbtn").insertAdjacentHTML('beforeend', tmpBtn);
-    if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
+    if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
         document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
             chrome.runtime.sendMessage({
                 type: "openOptionsPage_GPA"
@@ -2118,18 +2176,18 @@ function appendAvgMaxScoresInPage(data,redotimes){
         try {
             
             if((data.usrS/data.totalS)*100>=(data.avgS/data.totalS)*100+10||((data.usrS/data.totalS)*100)>=97||data.usrS>=data.maxS){
-                document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style="text-shadow: 0 0 10px #bbffbb";
+                queryAllByClassNames("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style="text-shadow: 0 0 10px #bbffbb";
             }else if((data.usrS/data.totalS)*100+10<(data.avgS/data.totalS)*100||data.usrS==0){
-                document.getElementsByClassName("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style="text-shadow: 0 0 10px #ff9999";
+                queryAllByClassNames("ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx")[0].style="text-shadow: 0 0 10px #ff9999";
             }
 
             
             let elementToAppend;
-            let targetElement = document.getElementsByClassName("fe-components-stu-app-task-detail-__itemClassInfo--2Ist05O25K5lXA-9nAmiDO")[0]; // 找到目标元素
-            if(document.getElementsByClassName("ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP").length==2){
+            let targetElement = queryAllByClassNames("fe-components-stu-app-task-detail-__itemClassInfo--2Ist05O25K5lXA-9nAmiDO")[0]; // 找到目标元素
+            if(queryAllByClassNames("ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP").length==2){
                 return;
-            }else if(document.getElementsByClassName("ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP").length==1){
-                document.getElementsByClassName("ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP")[0].remove();
+            }else if(queryAllByClassNames("ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP").length==1){
+                queryAllByClassNames("ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP")[0].remove();
             }
             let maxS=data.maxS;
             let usrS=data.usrS;
@@ -2294,7 +2352,7 @@ function getUsrAssignmentInfoBeforeshowDiyBox(smsid, subjectid,subjectName,model
 
 function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
     console.log(assignmentList);
-    let tmp_target = document.getElementsByClassName("ng-scope fe-components-stu-app-realtime-list-__xbDialogModal--32pq02X2epeJa2CLnNeez5")[0];
+    let tmp_target = queryAllByClassNames("ng-scope fe-components-stu-app-realtime-list-__xbDialogModal--32pq02X2epeJa2CLnNeez5")[0];
     if(!tmp_target){
         console.log("[ShowDiyScoresBox]Target Not Found");
         return;
@@ -2356,9 +2414,9 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
     </div>
     </div>
     `; //Main Html of the box
-    let oriScore = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3")[0].innerText;
+    let oriScore = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3")[0].innerText;
     tmp_target.innerHTML = mainHtml;
-    document.getElementsByClassName("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[0].addEventListener("click", function() {
+    queryAllByClassNames("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[0].addEventListener("click", function() {
         closeGcalcBox();
     });
     document.getElementById("gb_resetBtn").addEventListener("click", function() {
@@ -2845,8 +2903,8 @@ function showState2DiyScoresBox(smsId,subjectId,subjectName,oriScore){
 </div>
     `; 
     document.getElementById("gb-body").style.display = "none";
-    document.getElementsByClassName("fe-components-stu-app-realtime-list-__xbDialogModalBox--1hItMXot7XJyswrPjZ2WjQ")[0].insertAdjacentHTML('beforeend', mainHtml);
-    document.getElementsByClassName("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[0].addEventListener("click", function() {
+    queryAllByClassNames("fe-components-stu-app-realtime-list-__xbDialogModalBox--1hItMXot7XJyswrPjZ2WjQ")[0].insertAdjacentHTML('beforeend', mainHtml);
+    queryAllByClassNames("fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv")[0].addEventListener("click", function() {
         closeGcalcBox();
     });
     document.getElementById("gb_finishBtn").addEventListener("click", function() {
@@ -2857,7 +2915,7 @@ function showState2DiyScoresBox(smsId,subjectId,subjectName,oriScore){
 
 
 function closeGcalcBox(){
-    document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[3].click();
+    queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[3].click();
 }
 
 function ribbon_Fireworks(duration_Seconds){
@@ -2921,7 +2979,7 @@ function addCalcState(data,redotimes){
         margin-top: -30px;
         margin-left: -15px;
         ">计算中 (NaN)</span>`
-            document.getElementsByClassName("fe-components-stu-business-topbar-__navBar--2Au2lL_QIAwQu9fN70vAd4")[0].insertAdjacentHTML('beforeend', mainHtml);
+            queryAllByClassNames("fe-components-stu-business-topbar-__navBar--2Au2lL_QIAwQu9fN70vAd4")[0].insertAdjacentHTML('beforeend', mainHtml);
         }*/
         //targ = document.getElementById("gcalc_proc");
 
@@ -2961,7 +3019,7 @@ function addCalcState(data,redotimes){
 
 function MB_insertEditedDiv() {
   // 查找第一个具有 'ng-isolate-scope' 类的元素
-  var target = document.querySelector('.fe-components-stu-app-task-list-__listItemBox--3elHWcZSeppt-hG2vNGaZz');
+  var target = querySelectorStable('.fe-components-stu-app-task-list-__listItemBox--3elHWcZSeppt-hG2vNGaZz');
   var already = document.querySelector('#my_status_bar');
   // 确保找到了目标元素
   if (target && !already) {
@@ -3200,7 +3258,7 @@ function addSubmitLinkBtn(assignmentId,redotimes){
         src="${chrome.runtime.getURL("icon.png")}"style="width: 19px;"> 加入链接
         </button>`
     
-        document.querySelector("xb-rest-btn.ng-scope.ng-isolate-scope button img.ng-scope.fe-components-xb-rest-btn-__img--lETa8z2YkhgS2-Jzh69Al").parentElement.parentElement.insertAdjacentHTML('beforeend', mHtml);
+        querySelectorStable("xb-rest-btn.ng-scope.ng-isolate-scope button img.ng-scope.fe-components-xb-rest-btn-__img--lETa8z2YkhgS2-Jzh69Al").parentElement.parentElement.insertAdjacentHTML('beforeend', mHtml);
         document.getElementById("gcalc_addLink").onclick = function() {
             let link = prompt("【提交后将覆盖原有内容】\n老师端点击后将直接跳转\n请输入一个链接 (如：Canva共享链接):");
             if(!link.includes("http")) link = "http://" + link;
@@ -3210,7 +3268,7 @@ function addSubmitLinkBtn(assignmentId,redotimes){
                 let sdata={link:link,id:assignmentId,cont:cont};
                 send_comp_msg("submitLinkAssign",sdata,"1");
                 if(window.location.href === "https://tsinglanstudent.schoolis.cn/Home#!/task/list/detail"){
-                    document.getElementsByClassName("ng-binding ng-scope fe-components-xb-location-__router--nsd2ZgXX2cpKLO-r5y7lv")[0].click();
+                    queryAllByClassNames("ng-binding ng-scope fe-components-xb-location-__router--nsd2ZgXX2cpKLO-r5y7lv")[0].click();
                 }
             }else{
                 sendAlerttip("[操作已取消] 链接过短");
@@ -3232,7 +3290,7 @@ function addSubmitLinkBtn(assignmentId,redotimes){
 
 
 function addTeamsAssignmentsBigBtn() {
-    const parent = document.getElementsByClassName("fe-components-stu-app-task-list-__listItemBox--3elHWcZSeppt-hG2vNGaZz")[0];
+    const parent = queryAllByClassNames("fe-components-stu-app-task-list-__listItemBox--3elHWcZSeppt-hG2vNGaZz")[0];
     const bigBtn = document.createElement('span');
     bigBtn.innerHTML = `
         <div ng-class="styles.listItem" ng-repeat="item in $ctrl.fancyList" class="ng-scope fe-components-stu-app-task-list-__listItem--2LlZEXXtXjZzVCV4Ai9B6y">
@@ -3323,7 +3381,7 @@ function insertTeamsLogoLink() {
     linkElement.appendChild(imgElement);
     linkElement.appendChild(spanElement);
 
-    const parentElement = document.querySelector('.fe-components-xb-pagination-__pageBox--3F71ymrSYtbCMwqmq90a4P');
+    const parentElement = querySelectorStable('.fe-components-xb-pagination-__pageBox--3F71ymrSYtbCMwqmq90a4P');
     if (parentElement && parentElement.firstChild) {
         parentElement.insertBefore(linkElement, parentElement.firstChild); // 插入到第一个 child 前
         document.getElementById("gcalcTeamsPageBtn").addEventListener('click', function() {
@@ -3365,7 +3423,7 @@ function showFetchedAssignmentData_toPage(score,redotimes){
         <!-- 教师点评 -->
         <!-- ngIf: taskDetailInfo.comment||(teacherCommentDocuments1.length !=0||teacherCommentDocuments2.length != 0) -->
     </div>`;
-    document.getElementsByClassName("fe-components-stu-app-task-detail-__scoreInfo--34-hc2syVrNGe_yeBKsnL0")[0].parentElement.innerHTML = boxHtml;
+    queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--34-hc2syVrNGe_yeBKsnL0")[0].parentElement.innerHTML = boxHtml;
     } catch (error) {
         setTimeout(() => {
             if(redotimes<10){
@@ -3463,7 +3521,7 @@ async function checktitleElementExistence() {
         }, 5000); // 5秒超时
 
         const intervalId = setInterval(() => {
-            let element = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0];
+            let element = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0];
             if (element && element.innerText) {
                 clearTimeout(timeoutId);
                 clearInterval(intervalId);
@@ -3479,7 +3537,7 @@ function delay(ms) {
 }
 async function recordLoginUser() {
     try {
-        const span = document.querySelector(".ng-binding.fe-components-stu-business-topbar-profile-__textName--3bSZuorZJGVJm0wDSYFp_B");
+        const span = querySelectorStable(".ng-binding.fe-components-stu-business-topbar-profile-__textName--3bSZuorZJGVJm0wDSYFp_B");
         if (!span) {
             console.error("User info span not found");
             return;
@@ -3502,11 +3560,11 @@ async function recordLoginUser() {
     return;
     //暂未完成
     MSData = await getFromChromeStorage("MSUserProfile");
-    if(MSData.state===1&&MSData.xbAccount===document.querySelector(".ng-binding.fe-components-stu-business-topbar-profile-__textName--3bSZuorZJGVJm0wDSYFp_B").innerHTML){
+    if(MSData.state===1&&MSData.xbAccount===querySelectorStable(".ng-binding.fe-components-stu-business-topbar-profile-__textName--3bSZuorZJGVJm0wDSYFp_B").innerHTML){
         sendSeccesstip("账号正确可以使用");
         send_comp_msg("StartMSFeature",null,null);
     }else{
-        sendErrortip("账号不正确或未登录"+MSData.xbAccount+document.querySelector(".ng-binding.fe-components-stu-business-topbar-profile-__textName--3bSZuorZJGVJm0wDSYFp_B").innerHTML);
+        sendErrortip("账号不正确或未登录"+MSData.xbAccount+querySelectorStable(".ng-binding.fe-components-stu-business-topbar-profile-__textName--3bSZuorZJGVJm0wDSYFp_B").innerHTML);
         return;
     }
 }
@@ -3514,7 +3572,7 @@ async function recordLoginUser() {
 async function showGPABox(){
     await checktitleElementExistence();
         
-    const smsId = await getIdBySemester(document.getElementsByClassName("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
+    const smsId = await getIdBySemester(queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
     chrome.storage.local.get("gpaList"+smsId,function(tmp){
         let gpaList = tmp["gpaList"+smsId];
         console.log(gpaList);
@@ -3526,16 +3584,16 @@ async function showGPABox(){
             
             
 
-            document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText=tlang("GPA计算详细","GPA Calculation Details");
-            document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText=document.getElementsByClassName("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value;
-            document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].style.paddingBottom="30px";
+            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText=tlang("GPA计算详细","GPA Calculation Details");
+            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText=queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value;
+            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].style.paddingBottom="30px";
 
 
-            document.getElementsByClassName("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[0].innerText=tlang("学科","Subject");
-            document.getElementsByClassName("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[2].innerText=tlang("GPA / 未加权GPA","GPA / Unweighted GPA");
-            let sublineA = document.getElementsByClassName("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[0];
-            let sublineB = document.getElementsByClassName("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[1];
-            let bigScore = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3")[0];
+            queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[0].innerText=tlang("学科","Subject");
+            queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[2].innerText=tlang("GPA / 未加权GPA","GPA / Unweighted GPA");
+            let sublineA = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[0];
+            let sublineB = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[1];
+            let bigScore = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3")[0];
 
             bigScore.innerText=schoolis_gpa?schoolis_gpa:gpa;
             bigScore.style.marginTop="-12px";
@@ -3559,7 +3617,7 @@ async function showGPABox(){
             }
 
 
-            const originalItem = document.getElementsByClassName("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[1];
+            const originalItem = queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[1];
             if (originalItem) {
                 while (originalItem.firstChild) {
                     originalItem.removeChild(originalItem.firstChild);
@@ -3666,13 +3724,13 @@ function generateId() {
 function matchSubjectToGoal(smsId) {
     //25.8.30暂时关闭
     return;
-    let subjectName = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText;
+    let subjectName = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText;
     getFromChromeStorage(`${smsId}|${usr}|Goals`, function (goals) {
         if(goals==null||goals.subjectName==null){
             return;
         }else{
             let goalScore = goals.subjectName;
-            let scoreElement = document.querySelector(".ng-binding.fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3");
+            let scoreElement = querySelectorStable(".ng-binding.fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3");
         
             scoreElement.style.marginTop = "-15px";
         
@@ -3699,7 +3757,7 @@ function saveGoals(smsId){
         let goalScore = goals[i].goalScore;
         let subjectName = goals[i].subjectName;
     }
-    let usrName=document.getElementsByClassName("ng-binding fe-components-stu-business-topbar-profile-__textTip--2HOWBFmZQ5JVEZskM6Xjuh")[0].innerText;
+    let usrName=queryAllByClassNames("ng-binding fe-components-stu-business-topbar-profile-__textTip--2HOWBFmZQ5JVEZskM6Xjuh")[0].innerText;
     saveToChromeStorage
 }
 
@@ -3721,7 +3779,7 @@ function insertCountdownBanner() {
     closeBtn.onclick = () => banner.remove();
     banner.appendChild(closeBtn);
 
-    document.getElementsByClassName("fe-components-stu-business-topbar-__navBar--2Au2lL_QIAwQu9fN70vAd4")[0].appendChild(banner);
+    queryAllByClassNames("fe-components-stu-business-topbar-__navBar--2Au2lL_QIAwQu9fN70vAd4")[0].appendChild(banner);
 
     function updateCountdown() {
         const now = new Date();
@@ -3753,7 +3811,7 @@ function showTeamsMainPannelBtn(){
 </button></stu-arc-button>
     </span>`;
 
-    const parentElement = document.querySelector('.ng-scope.fe-modules-task-__examTab--1ZAmHzjYqG3fNys7mmzbQs');
+    const parentElement = querySelectorStable('.ng-scope.fe-modules-task-__examTab--1ZAmHzjYqG3fNys7mmzbQs');
     if (parentElement) {
         parentElement.insertAdjacentHTML('afterbegin', btnHtml);
         setTimeout(() => {
@@ -3808,19 +3866,19 @@ function switchToTeamsPanel() {
 
     document.getElementById("gc_teamsMainBtn").children[0].children[0].style.backgroundColor = "#5B8AF9";
     document.getElementById("gc_teamsMainBtn").children[0].children[0].style.color = "#FFF";
-    document.getElementsByClassName("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.backgroundColor = "#FFF";
-    document.getElementsByClassName("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.borderColor = "#EDEDED";
-    document.getElementsByClassName("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.color = "#737373";
-    //document.getElementsByClassName("fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM")[0].remove();
+    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.backgroundColor = "#FFF";
+    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.borderColor = "#EDEDED";
+    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.color = "#737373";
+    //queryAllByClassNames("fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM")[0].remove();
    
-    document.getElementsByClassName("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].addEventListener('click', function() {
-        document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].click();
+    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].addEventListener('click', function() {
+        queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].click();
     });
     getFromChromeStorage("MSUserProfile").then(profile => {
-        document.getElementsByClassName("ng-binding fe-components-xb-pagination-__total--3M1T46bD50G4qol-v9NA8i")[0].innerHTML = `${tlang("绑定的Teams账号：","Binded Teams Account:")}
+        queryAllByClassNames("ng-binding fe-components-xb-pagination-__total--3M1T46bD50G4qol-v9NA8i")[0].innerHTML = `${tlang("绑定的Teams账号：","Binded Teams Account:")}
             <span ng-class=" $ctrl.styles.text" class="ng-binding fe-components-xb-pagination-__text--17ymRnzQ0Vej98kzhssEk-">${profile.email}</span>`
     });
-    const mainContainer = document.getElementsByClassName("fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM")[0];
+    const mainContainer = queryAllByClassNames("fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM")[0];
     fetch(chrome.runtime.getURL('teamsPanel.html'))
     .then(response => response.text())
     .then(html => {
@@ -5021,9 +5079,9 @@ function modifyPageFooter() {
       ? chrome.runtime.getURL('res/iconBig_foot.png')
       : 'res/iconBig_only.png';
     if (document.querySelector(`img[src="${logoUrl}"]`)) return;
-    const footerEl = document.querySelector('div[class*="fe-components-stu-business-org-footer-__footBox--"]')
+    const footerEl = querySelectorStable('div[class*="fe-components-stu-business-org-footer-__footBox--"]')
       || document.querySelector('footer')
-      || document.querySelector('.fe-components-stu-business-org-footer-__footBox--3hotK29i9BpxtSdcmmjpqY');
+      || querySelectorStable('.fe-components-stu-business-org-footer-__footBox--3hotK29i9BpxtSdcmmjpqY');
 
     if (!footerEl) return;
     const badge = document.createElement('div');
@@ -5068,11 +5126,9 @@ function modifyPageFooter() {
 
 function addGuestModeCheckbox() {
     try {
-        const forgetLink = document.getElementsByClassName(
-            "ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR"
-        )[0] || document.querySelector(
-            'a.ng-binding.fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR'
-        );
+        const forgetLink =
+            queryByClassNames('ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR') ||
+            querySelectorStable('a.ng-binding.fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR');
         if (!forgetLink) return;
         const container = forgetLink.parentElement;
         if (!container) return;
