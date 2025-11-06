@@ -71,15 +71,20 @@ function tlang(chi,eng){
 chrome.runtime.onInstalled.addListener(function(details) {
     if (details.reason === "update") {
         let updatedMsg;
+        if(details.previousVersion == chrome.runtime.getManifest().version){
+            return;
+        }
         updatedMsg = tlang(`
                 <div style="color: white; font-size: 11px;">
       <p style="margin-bottom: 2px; margin-top: 2px;">
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【计算】修复了无分科目被计入GPA计算导致绩点为0的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【计算】修复了体育课可能未被计入的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;"><strong>· 【Teams Organizer】Teams绑定功能正式上线！快点击主界面->Teams面板查看吧！</strong></p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【功能】新分数刮一刮功能已上线！</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【功能】登录界面新增一次性“访客模式”选项</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【功能】优化了“隐藏低分外显”功能的稳定性</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】课程表同步设置中新增“是否触发提醒”选项，默认关闭</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】优化了一些反馈的问题</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -87,8 +92,11 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· Task Prediction Mode for GPA Calculation is now available! Users can see how custom tasks affect their GPA and save edits for multiple subjects.</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· Automatic Calculation Optimized:Calculation logic improved, speed increased, and the issue of failing to retrieve some subject grades has been fixed.</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· [Feature] New Scratch Score feature launched!</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· [Feature] New "Guest Mode" option added in login page for one-time use</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· [Feature] Improved stability of "Hide Low Scores" feature</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· [Teams Organizer] New "Whether to trigger reminders" option added in timetable sync settings, default is off</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· [Teams Organizer] Some feedback issues have been fixed</p>
     </div>
     
     `)
@@ -2522,7 +2530,7 @@ async function M_StartMSFeatures() {
     } else {
         if (await T_initMS() !== 1) {
             console.log("![TS]Init MS Failed, Rebinding");
-            M_BindMSAccount(xbProfile);
+            M_BindMSAccount("Rebind");
             return;
         } else {
             console.log("![TS]MS Account Matched!!");
@@ -2614,7 +2622,7 @@ async function T_batchAddToMSCalender(events, accessToken) {
 							displayName: item.event.location
 						},
 						categories: [item.event.tag],
-						isReminderOn: true,
+						isReminderOn: (item.event.reminderMinutesBeforeStart ?? -1) >= 0,
 						reminderMinutesBeforeStart: item.event.reminderMinutesBeforeStart?item.event.reminderMinutesBeforeStart:5
 					}
 				}))
@@ -2682,6 +2690,7 @@ async function T_batchAddToMSCalender(events, accessToken) {
 
 async function T_SyncToTeamsCalender() {
 	let calendershift = 1;
+    let calenderAlert = 0;
 	const syncResultDefault = { amountOfSuccess: 0, amountOfFailed: 0 };
 
 	M_send_str_msg("MSPanel_showSyncing",1,-1);
@@ -2692,6 +2701,11 @@ async function T_SyncToTeamsCalender() {
 				calendershift = 1;
 			} else {
 				calendershift = 0;
+			}
+            if(settingsData?.CalenderTriggerNotify==null || settingsData?.CalenderTriggerNotify==undefined || settingsData?.CalenderTriggerNotify==1){
+				calenderAlert = 1;
+			} else {
+				calenderAlert = 0;
 			}
 			chrome.storage.local.get('MSaccessToken', async function(getResult){
 				const accessToken = getResult.MSaccessToken;
@@ -2780,7 +2794,8 @@ async function T_SyncToTeamsCalender() {
 								location: classInfo.playgroundName || '',
 								title: classInfo.name || '',
 								content: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding: 10px;">\n                            <p style=\"margin: 0 0 8px 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("老师", "Teacher")}】 \n                                <span style=\"font-weight: normal;\">\n                                ${classInfo.teacherList.map(t => t.name).join(', ')}\n                                </span>\n                            </p>\n                            <p style=\"margin: 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("班级", "Class")}】\n                                <span style=\"font-weight: normal;\">\n                                ${tlang(classInfo.classInfo.className, classInfo.classInfo.classEName)}\n                                </span>\n                            </p>\n                            </div><p style="display:none;font-size: 0; color: transparent;" >gcMark{${gcId}}</p>`,
-								tag: 'GCalcAutoSync_Class'
+								tag: 'GCalcAutoSync_Class',
+                                reminderMinutesBeforeStart: calenderAlert ? 5 : -1,
 							}];
 						});
 						if(events.length<1){

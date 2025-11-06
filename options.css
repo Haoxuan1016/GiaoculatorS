@@ -102,7 +102,7 @@ body {
     
     
     
-    .settings-modal {
+.settings-modal {
     
     background-color: rgba(255, 255, 255, 0.75);
     
@@ -120,11 +120,11 @@ body {
     
     margin: 20px;
     
-    }
+}
     
     
     
-    #autoHide_SettingBox {
+#autoHide_SettingBox {
     
     display: flex;
     
@@ -134,7 +134,22 @@ body {
     
     align-items: center; /* 这会垂直居中对齐容器内的所有项 */
     
-    }
+}
+
+#scratchLabel {
+    display: inline-block;
+    margin: 0 6px 0 0;
+    padding-top: 8px;
+    vertical-align: middle;
+}
+
+#scratch_setting {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 4px;
+    padding: 0;
+    vertical-align: middle;
+}
     
     
     

@@ -1,4 +1,4 @@
-let version = "1.02";
+﻿let version = "1.1.1";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -514,7 +514,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
             } else if (type == "bp-refresh"){
                 location.reload();
             }else if (type == "bp-firstInstall"){
-                sendInfotipLong(tlang("Giaoculator已安装成功！<br>即可点击右下角悬浮窗进入设置界面!<br>&nbsp;———— Haoxuan","Giaoculator has been installed successfully!<br>Click the floating ball in the lower right corner to enter the settings page!<br>&nbsp;———— Haoxuan"))
+                //do nothing for now
             } else if (type == "bp-observeDynamicScore"){
                 observeTarget(
                     "fe-components-stu-app-realtime-list-__listItemBox--1RuNIoOoFIYPl4lXa4x2kS",
@@ -522,10 +522,13 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
                 );
             } else if (type == "MSPanel_showSyncing"){
                 MSShowSyncing(data.cont);
+            } else if (type == "bp-fun-addMask"){
+                fun_scratchScore();
             } else if (type == "bp-logpageState"){
                 //换位置
             }else if (type == "bp-verNum"){
                 version = data.cont;
+            
             } else if (type == "bp-loggedin-frameEdit"){
                 insertCountdownBanner();
                 hideAssignments()
@@ -603,7 +606,6 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
                 recordLoginUser();
             } else if (type == "append2Scores"){
                 appendAvgMaxScoresInPage(data,0);
-                console.log("2score",data);
             } else if (type == "bp-GPANotcalced"){
                 gpaNotClaced();
             } else if (type == "bp-OpenPageAfterLoginNtw"){
@@ -838,6 +840,8 @@ function updateContent() {
 
 function hideScores(scorelim) {
 
+
+
   const elements = document.getElementsByClassName('fe-components-stu-app-realtime-list-__content--2keQZ3lLv0HwiGHcw7cEeU');
   for (let element of elements) {
     const scoreNumElement = element.querySelector('.fe-components-stu-app-realtime-list-__scoreNum--toPOhGj5JXhKFaxKzn7G1');
@@ -887,14 +891,18 @@ async function getFromChromeStorage(keyName) {
 }
 
 async function hideAssignments() {
+    let guestMode = await getFromChromeStorage("login_guest");
     let settingData=await getFromChromeStorage("user_preference");
    // insertTeamsLogoLink();
     console.log("RUNNING assign")
-
+   
     if(tmp_stopHide==true){
         return;
     }
     var scorelim = settingData.autoHide_Condition;
+    if(guestMode==true){
+        scorelim=101;
+    }
     const elements = document.getElementsByClassName('ng-scope fe-components-stu-app-task-list-__listItem--2LlZEXXtXjZzVCV4Ai9B6y');
     for (let element of elements) {
         try {
@@ -1377,7 +1385,11 @@ function sendAlertrttip(cont){
 async function hideScoresRepeatedly(interval, duration) {
     console.log("aaa");
     const { user_preference } = await chrome.storage.local.get('user_preference');
+    let guestMode = await getFromChromeStorage("login_guest");
     let scorelim = user_preference?.autoHide_Condition;
+    if(guestMode==true){
+        scorelim = 0;//hide all for guest
+    }
     let dohide = user_preference?.autoHide;
     console.log("InHide");
     if (!dohide) {
@@ -1394,40 +1406,15 @@ async function hideScoresRepeatedly(interval, duration) {
     }
 }
 function hideAseRepeatedly(data, interval, duration) {
-    if(tmp_stopHide==true){
-        return;
-    }
-    const times = Math.floor(duration / interval);
-    for (let i = 0; i <= 100; i++) {
-        setTimeout(() => {  
-            chrome.storage.local.get('enable_state', function(result) {
-                if(result.enable_state){
-                    insertTeamsLogoLink();
-                    hideAssignments(data.cont);
-                }
-            });//该实现方式有待优化，可考虑在检测为false时continue
-        }, i * 2);
-    }
-    for (let i = 0; i <= times; i++) {
-        setTimeout(() => {  
-            chrome.storage.local.get('enable_state', function(result) {
-                if(result.enable_state){
-                    insertTeamsLogoLink();
-                    hideAssignments(data.cont);
-                }
-            });//该实现方式有待优化，可考虑在检测为false时continue
-        }, i * interval);
-    }
-}   
+    //25.11.1 已关闭，content_instantEdit将负责hide assignment操作
+    return;
+}
 
-
-
-function showStateAtLoginPage(){
-    console.log("SHOWSTATE");
+function showStateAtLoginPage(isGuest){
     
     chrome.storage.local.get('enable_state', function(estate) {
         chrome.storage.local.get('user_preference', function(tmp) {
-            showStateAtLoginPageMain(tmp,estate.enable_state);
+            showStateAtLoginPageMain(tmp,estate.enable_state,isGuest);
         });
     });
 
@@ -1497,7 +1484,7 @@ function showHideButton(tmp){
 
 }
 
-function showStateAtLoginPageMain(tmp,estate) {
+function showStateAtLoginPageMain(tmp,estate,isGuest) {
     var langSet = (navigator.language || navigator.userLanguage).startsWith('zh') ? 'cn' : 'en';
     var content;
     var div = document.querySelector('.fe-components-stu-business-login-enter-box-__signBtnWrap--1hC-pSiXWu5_WJuSPKGEzQ');
@@ -1507,7 +1494,13 @@ function showStateAtLoginPageMain(tmp,estate) {
     }
 
     data = tmp.user_preference;
-    if(data.autoHide==true && estate){
+    if(isGuest){
+        if(langSet == 'cn'){
+            content = '访客模式：隐藏所有数据';
+        }else{
+            content = 'Guest Mode: Hide All Data';
+        }
+    }else if(data.autoHide==true && estate){
         if(langSet == 'cn'){
             if(data.autoHide_Condition > 100){
                 content = '自动隐藏所有数据';
@@ -1535,8 +1528,12 @@ function showStateAtLoginPageMain(tmp,estate) {
         }
     }
     var containerG = document.getElementById('autoHideState');
-    if(containerG){
-        containerG.remove();
+    if (containerG) {
+        var existingIcon = containerG.querySelector('img');
+        if (existingIcon) existingIcon.src = chrome.runtime.getURL(data.autoHide&&estate ? "res/hideOn.svg" : "res/hideOff.svg");
+        var existingText = containerG.querySelector('span');
+        if (existingText) existingText.textContent = content;
+        return;
     }
     var container = document.createElement('div');
     container.id = 'autoHideState';
@@ -1548,6 +1545,9 @@ function showStateAtLoginPageMain(tmp,estate) {
     // 创建图标img元素
     var iconImg = document.createElement('img');
     iconImg.src = chrome.runtime.getURL(data.autoHide&&estate ? "res/hideOn.svg" : "res/hideOff.svg"); // 你的SVG文件路径
+    if(isGuest){
+        iconImg.src = chrome.runtime.getURL("res/hideOn.svg");
+    }
     iconImg.alt = '*';
     iconImg.style.height = '20px'; // 根据需要调整大小
     iconImg.style.width = '25px'; // 根据需要调整大小
@@ -1573,8 +1573,23 @@ function showStateAtLoginPageMain(tmp,estate) {
 
 function diyHomepage(){
     chrome.storage.local.get('user_preference', function(result) {
-        
-        showStateAtLoginPage();
+        if(result.user_preference==undefined || result.user_preference==null){
+            const homeSrc = "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN";
+            const user_preference = {
+                calcRange: 1,
+                homeSrc: homeSrc,
+                autoHide: true,
+                advLogPage: true,
+                advScoreShadow: false,
+                autologNtw: 0,
+                homeSrcDark: "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN",
+                homeDarkMode: 1,
+                autoHide_Condition: 70,
+            };
+            chrome.storage.local.set({ user_preference: user_preference });
+            location.reload();
+        }
+        showStateAtLoginPage(false);
         var sourcedata = result.user_preference;
         if(result.user_preference.advLogPage){
             setTimeout(() => {
@@ -1661,6 +1676,7 @@ function ntwLoginMain(){
 function beautyLoginPage(srcData,redotimes){
     let colormode = srcData.homeDarkMode*1;
     var loginPageSrc = srcData.homeSrc;
+    addGuestModeCheckbox();
     if(colormode >= 2){
         const hours = new Date().getHours();
         if (hours >= 6 && hours <= 18) {
@@ -2068,12 +2084,36 @@ function hidestudentInfo(){
     try {document.getElementsByClassName("fe-components-stu-app-task-detail-__topInfoLi---LQyncvlBCIHhDzj4LFAn fe-components-stu-app-task-detail-__topInfo--2dj7QXyKxrcGchkM3UQrFK fe-components-stu-app-task-detail-__studentInfo--3pYOqsjP22Jx0AnmEkK9HR")[0].remove()} catch (error) {}
 }
 
+function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
+    let btntext = tlang("进入任务预测","Enter Edit Mode")
+    if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
+        btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
+    }
+    let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; padding: 0px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
+    
+    
+    document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
+    document.getElementById("gcalc_diyboxbtn").insertAdjacentHTML('beforeend', tmpBtn);
+    if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
+        document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
+            chrome.runtime.sendMessage({
+                type: "openOptionsPage_GPA"
+            });
+        });
+    }else{
+        document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
+        
+            getUsrAssignmentInfoBeforeshowDiyBox(smsid,subjectid,subjectname,model);
+            
+        });
+    }
+
+    
+}
+
 function appendAvgMaxScoresInPage(data,redotimes){
     chrome.storage.local.get('exp_showFullavg', function(state) {
-        let ShowFull_state = state.exp_showFullavg;
-        if(!curretSchool().includes("tsinglan")){
-            ShowFull_state = 1;
-        }
+        let ShowFull_state = 1;
         console.log(redotimes);
         try {
             
@@ -2118,10 +2158,10 @@ function appendAvgMaxScoresInPage(data,redotimes){
                 } else if (PercentageUsrS < PercentageAvgS) {
                     hintText = tlang("有进步空间", "Room for Improvement");
                 }
-                //console.log(PercentageAvgS,PercentageUsrS,PercentageMaxS);
+                console.log(PercentageAvgS,PercentageUsrS,PercentageMaxS);
 
                 avgScoreModel = "<p ng-class='styles.itemClassInfoShow' ng-if='taskDetailInfo.displayClassAvgScore' style='margin-right: 7px' class='ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP'>"+"&nbsp;&nbsp;"+hintText+"</p>"
-                //console.log(hintText);
+                console.log(hintText);
             }
             
             let tempDiv = document.createElement('div'); 
@@ -2161,33 +2201,6 @@ function appendAvgMaxScoresInPage(data,redotimes){
     
     
 }
-function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
-    let btntext = tlang("进入任务预测","Enter Edit Mode")
-    if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
-        btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
-    }
-    let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; padding: 0px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
-    
-    
-    document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
-    document.getElementById("gcalc_diyboxbtn").insertAdjacentHTML('beforeend', tmpBtn);
-    if(document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
-        document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
-            chrome.runtime.sendMessage({
-                type: "openOptionsPage_GPA"
-            });
-        });
-    }else{
-        document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
-        
-            getUsrAssignmentInfoBeforeshowDiyBox(smsid,subjectid,subjectname,model);
-            
-        });
-    }
-
-    
-}
-
 function sys_showload(state){
     if (state == true){
         const targetElement = document.querySelector('[class*="stu-common-stu-loading"]');
@@ -3377,6 +3390,8 @@ function observeUrlChange(callbacks) {
     const observer = new MutationObserver(checkUrl);
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("popstate", checkUrl);
+    // Ensure hash-based routing also triggers observers (AngularJS/SPA routes)
+    window.addEventListener("hashchange", checkUrl);
     ["pushState", "replaceState"].forEach(type => {
         const original = history[type];
         history[type] = function (...args) {
@@ -3783,7 +3798,7 @@ function showTeamsMainPannelBtn(){
                     }
                 });
             });
-        }, 30);
+        }, 50);
     }
 
 }
@@ -4431,7 +4446,7 @@ function createPopup(type, data = {}) {
         style.textContent = `
             ${localFontUrl ? `@font-face { font-family: 'Material Symbols Outlined Local'; font-style: normal; font-weight: 400; src: url('${localFontUrl}') format('truetype'); font-display: swap; }` : ''}
             .gc-carousel { position: relative; overflow: hidden; }
-            .gc-carousel .gc-carousel-arrow { color: #fff; background: rgba(0,0,0,0.45); transition: background-color .28s ease, box-shadow .28s ease, transform .28s ease; }
+            .gc-carousel .gc-carousel-arrow { color: #fff; background: rgba(0,0,0,0.45); transition: background-color .28s ease, box-shadow .28s ease, transform .28s ease; z-index: 3; }
             .gc-carousel .gc-carousel-arrow:hover { background: rgba(59,130,246,0.78); box-shadow: 0 12px 28px rgba(37,99,235,0.32); transform: translateY(-50%) scale(1.08); }
             .gc-carousel .gc-carousel-arrow:focus-visible { outline: 0; box-shadow: 0 0 0 3px rgba(59,130,246,0.4); }
             .gc-carousel .gc-carousel-arrow.gc-press { animation: gc-carousel-press .42s ease; }
@@ -4607,6 +4622,7 @@ function createPopup(type, data = {}) {
                 let originalSettings = settings? settings : {CalenderSyncPeriod: "1 Day", CalenderSyncShift: true};
                 const syncPeriod = settings?.CalenderSyncPeriod ?? "1 Day";
                 const doShift = settings?.CalenderSyncShift ?? true;
+                const doAlert = settings?.CalenderTriggerNotify ?? false;
                 body.innerHTML = `
                 <div class="settings-title">${tlang("课程表同步设置","Calendar Sync Settings")}</div>
                 <div class="settings-content">
@@ -4632,6 +4648,13 @@ function createPopup(type, data = {}) {
                         <p style="font-size: 0.85em; color: #888; margin: 4px 0 8px 0;">
                             ${tlang("将同步的课程时间自动调整为高中部标准作息时间。","Automatically adjust synced class times to the HS bell schedule.")}
                         </p>
+                        <label class="settings-checkbox-label">
+                            <input type="checkbox" id="calendar-alert-checkbox" class="settings-checkbox"${doAlert ? " checked" : ""}>
+                            <span class="checkbox-text">${tlang("课程表事件是否触发通知提醒","Enable Outlook Notifications for Class Events")}</span>
+                        </label>
+                        <p style="font-size: 0.85em; color: #888; margin: 4px 0 8px 0;">
+                            ${tlang("勾选后，Outlook会在上课前五分钟发送提醒。若无特别必要，建议关闭以防止频繁通知。","Check this box to trigger a notification for class events. If you don't need this, we recommend unchecking to prevent excessive notifications.")}
+                        </p>
                     </div>
                     <div class="settings-section">
                          <button id="settings-action-btn" class="settings-action-btn">${tlang("立即同步一次","Start Calender Sync Now")}</button>
@@ -4651,9 +4674,10 @@ function createPopup(type, data = {}) {
                 document.getElementById("gc-popup-save").addEventListener('click',function() {
                     const syncPeriod = document.getElementById('sync-period-select').value;
                     const doShift = document.getElementById('calendar-shift-checkbox').checked;
-                    
+                    const doAlert = document.getElementById('calendar-alert-checkbox').checked;
                     originalSettings.CalenderSyncPeriod = syncPeriod;
                     originalSettings.CalenderSyncShift = doShift;
+                    originalSettings.CalenderTriggerNotify = doAlert;
                     saveToChromeStorage("MSFeaturesSettings",originalSettings);
                 })
             });
@@ -4819,12 +4843,48 @@ function createPopup(type, data = {}) {
             texts: data.text,
             initialIndex
         });
+    } else if (type === 9) {
+        // Override layout for type 1: top-right header + image carousel in the middle
+        const body = modal.querySelector('.custom-modal-body') || (()=>{ const b=document.createElement('div'); b.className='custom-modal-body'; modal.appendChild(b); return b; })();
+        const images = Array.isArray(data.images) ? data.images : [];
+        const initialIndex = typeof data.startIndex === 'number' ? Math.max(0, Math.min(data.startIndex, images.length - 1)) : 0;
+        ensurePopupCarouselStyles();
+        body.innerHTML = `
+            <div class="gc-type1-top" style="display:flex;justify-content:flex-start;align-items:center;gap: 10px;margin:0;padding-bottom: 30px;">
+            <div class="modal-text" style="font-weight:500;margin-bottom:0px">${data.title}</div>
+            </div>
+            <div class="gc-carousel" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:180px;max-height:260px;overflow:hidden;border-radius:12px;background:#f7f8fa;">
+                <button type="button" class="gc-carousel-arrow gc-left" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                    <span class="gc-carousel-icon material-symbols-outlined">chevron_left</span>
+                </button>
+                <img class="gc-carousel-image" alt="" style="max-width:100%;max-height:240px;object-fit:contain;display:${images.length? 'block':'none'};border-radius:12px;position:relative;z-index:1;" />
+                <div class="gc-carousel-empty" style="color:#999;font-size:0.95rem;display:${images.length? 'none':'block'};padding:24px 8px;text-align:center;">${tlang("暂无图片","No images")}</div>
+                <button type="button" class="gc-carousel-arrow gc-right" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);border:none;width:32px;height:32px;border-radius:16px;cursor:pointer;display:${images.length>1?'flex':'none'};align-items:center;justify-content:center;">
+                    <span class="gc-carousel-icon material-symbols-outlined">chevron_right</span>
+                </button>
+                <div class="gc-carousel-caption" style="display:none;z-index:99;"></div>
+                
+            </div>
+            <div class="custom-modal-footer" style="margin-top:30px;">
+                <button class="custom-btn btn-secondary" id="gc-popup-type9Disable">${tlang("关闭该功能","Disable Now")}</button>
+                <button class="custom-btn btn-primary" id="gc-popup-type9Okay">${tlang("确认","Got it!")}</button>
+            </div>
+        `;
+        setupPopupCarousel(body.querySelector('.gc-carousel'), {
+            images,
+            texts: data.text,
+            initialIndex
+        });
     }
 
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    if (type == 7 || type == 1 || type == 8) {
+    if (type == 7 || type == 1 || type == 8 ||  type == 9) {
         document.getElementsByClassName("custom-modal")[0].style.maxWidth = "700px";
+    }
+    if(type == 9){
+        document.getElementById('gc-popup-type9Disable').style.backgroundColor = "#e53e3e";
+        document.getElementById('gc-popup-type9Okay').style.borderColor = "#38a169";
     }
     if(type==2){
         try{
@@ -4908,6 +4968,25 @@ function handleGCPopupClick(event) {
         chrome.runtime.sendMessage({
                 type: "openOptionsPage_MSBind"
             });
+    } else if (event.target.id === 'gc-popup-type9Disable') {
+        getFromChromeStorage("user_preference").then(prefs => {
+            let originalPrefs = prefs ? prefs : {"scratchScore": false};
+            originalPrefs.scratchScore = false;
+            saveToChromeStorage("user_preference", originalPrefs);
+        });
+        try{
+            document.querySelector("canvas").remove()
+            document.querySelector("canvas").remove()
+        }catch(e){}
+        sendInfotip(tlang("已关闭分数刮一刮功能，设置中可重新打开","Score Scratching is being disabled, you may re-enable it in settings"),3000,"info");
+        removePopup(event.target.closest('.custom-modal-overlay'));
+    } else if (event.target.id === 'gc-popup-type9Okay') {
+        getFromChromeStorage("user_preference").then(prefs => {
+            let originalPrefs = prefs ? prefs : {"scratchScore": false};
+            originalPrefs.scratchScore = true;
+            saveToChromeStorage("user_preference", originalPrefs);
+        });
+        removePopup(event.target.closest('.custom-modal-overlay'));
     } else if (event.target.id === 'gc-popup-cancel') {
         removePopup(event.target.closest('.custom-modal-overlay'));
     } else if (event.target.id === 'gc-popup-save') {
@@ -4984,4 +5063,58 @@ function modifyPageFooter() {
   } catch (err) {
     try { console.warn('Giaoculator: modifyPageFooter failed', err); } catch (_) {}
   }
+}
+
+
+function addGuestModeCheckbox() {
+    try {
+        const forgetLink = document.getElementsByClassName(
+            "ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR"
+        )[0] || document.querySelector(
+            'a.ng-binding.fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR'
+        );
+        if (!forgetLink) return;
+        const container = forgetLink.parentElement;
+        if (!container) return;
+        // Avoid duplicate insertion
+        if (container.querySelector('#gx-guest-mode')) return;
+        // Ensure the container distributes left (checkbox) and right (forgot link)
+        const cs = getComputedStyle(container);
+        if (cs.display !== 'flex') {
+            container.style.display = 'flex';
+        }
+        container.style.justifyContent = 'space-between';
+        container.style.alignItems = 'center';
+        // Create checkbox + text label (default unchecked)
+        const label = document.createElement('label');
+        label.id = 'gx-guest-mode-wrap';
+        label.style.display = 'inline-flex';
+        label.style.alignItems = 'center';
+        label.style.gap = '6px';
+        label.style.color = '#737373'
+        label.style.cursor = 'pointer';
+        label.style.margin = '0';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = 'gx-guest-mode';
+        checkbox.name = 'gx-guest-mode';
+        checkbox.checked = false; // default is not checked
+        const text = document.createElement('span');
+        text.textContent = tlang("使用访客模式","Login as Guest");
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        container.insertBefore(label, container.firstChild);
+        saveToChromeStorage('login_guest', false);
+        checkbox.addEventListener('change', function () {
+            saveToChromeStorage('login_guest', checkbox.checked);
+            if(checkbox.checked){
+                sendInfotip(tlang("<strong>【访客模式】</strong>适用于借用他人电脑登录的情况","<strong>【Guest Mode】</strong>If you are borrowing someone else's computer to log in, enable this function."), 3000);
+                showStateAtLoginPage(true);
+            }else{
+                showStateAtLoginPage(false);
+            }
+        });
+    } catch (e) {
+        console.warn('addGuestModeCheckbox error', e);
+    }
 }

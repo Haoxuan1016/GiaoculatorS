@@ -179,7 +179,8 @@ function saveOptions() {
         autoHide_Condition: parseInt(autoHide_Condition, 10),
         homeSrc: welcomeMsg,
         homeSrcDark: document.getElementById('homeSrcDark').value,
-        homeDarkMode: document.getElementById('darkModeSelect').value // 0:Black 1:White 2:Depends on Time 3:Color&Pic
+        homeDarkMode: document.getElementById('darkModeSelect').value, // 0:Black 1:White 2:Depends on Time 3:Color&Pic
+        scratchScore : document.getElementById('scratch').checked
     };
 
     // Use chrome.storage.local to save the user preferences
@@ -415,6 +416,7 @@ function loadOptions() {
                 autologNtw = 0;
             }
             
+            document.getElementById('scratch').checked = data.user_preference.scratchScore ?? true;
             document.getElementById('welcomeMsg').value = data.user_preference.homeSrc;
             document.getElementById('darkModeSelect').value = data.user_preference.homeDarkMode;
             if(data.user_preference.homeDarkMode!=3){
@@ -470,7 +472,7 @@ function loadOptions() {
                 autologNtw: 0,
                 homeSrcDark: "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN",
                 homeDarkMode: 1,
-                autoHide_Condition: 70
+                autoHide_Condition: 70,
             };
             chrome.storage.local.set({ user_preference: user_preference });
             setTimeout(() => {
@@ -533,9 +535,10 @@ function setLanguage() {
             'updateLabel': 'Enable Update Notification',
             'res1TypeLabel': 'Resource Type',
             'homeSrcDarkLabel': 'Resource Type(Dark)',
-            'main_header_custom': 'Customization',
+            'main_header_custom': 'Other Settings',
             'customGPAweightLabel': 'GPA Calculation Weights',
             'customGPAweight': 'Edit Weights',
+            'scratchLabel': 'Scratch for New Scores'
         },
         'zh': {
             'main_header': '基本设置',
@@ -555,9 +558,10 @@ function setLanguage() {
             'updateLabel': '启用更新提示',
             'res1TypeLabel': '资源类型',
             'homeSrcDarkLabel': '资源类型(深色模式)',
-            'main_header_custom': '自定义设置',
+            'main_header_custom': '其他设置',
             'customGPAweightLabel': 'GPA计算权重',
             'customGPAweight': '编辑科目权重',
+            'scratchLabel': '新分数刮一刮'
         }
     };
     
@@ -1339,7 +1343,8 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
                 </div>
             </div>
             <!-- 备注 -->
-            <p class="note-text">Giaoculator仅能访问您所授权的作业与日历信息，所有操作将在本地完成。</p>
+            <p class="note-text">${tlang("Giaoculator仅能访问您所授权的作业与日历信息，所有操作将在本地完成。", "Giaoculator can only access the assignments and calendar you authorize, all operations will be completed locally.")}</p>
+            <p class="note-text" id="note-text-2">${tlang("绑定使用OAuth2.0协议进行，Giaoculator无法读取您的密码等信息。", "Authorization is done through OAuth2.0 protocol, and Giaoculator cannot read your password and other information.")}</p>
             <!-- 按钮区域 -->
             <div class="modal-buttons">
                 <button id="cancelBtn" style="display:none">解除绑定</button>
@@ -1459,6 +1464,9 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
             modal.querySelector('#userSelect').outerHTML = `<p style="color:#333;">${data.xbAccount}</p>`;
             modal.querySelector('#bindButton').outerHTML = `<p style="color:#333;">${data.name}</p>`;
             note.innerText = tlang(`绑定的Teams仅在校宝登录账号为${data.xbAccount}时生效，如需修改请先解除绑定`,`Login Xiaobao with ${data.xbAccount}. Please unbind first if you need to modify it.`);
+            try {
+                document.getElementById("note-text-2").remove();
+            } catch (e){}
             unbindBtn.style.display= "block";
             modal.querySelector('#saveBtn').innerText = tlang("确定","Okay");
         }else{
@@ -1475,6 +1483,9 @@ function openTeamsBidingModal(lastLoginUser,lastLoginUser2) {
                     modal.querySelector('#userSelect').outerHTML = `<p style="color:#333;">${data.xbAccount}</p>`;
                     modal.querySelector('#bindButton').outerHTML = `<p style="color:#333;">${data.name}</p>`;
                     note.innerText = (tlang(`${data.xbAccount}绑定成功！请重新登录校宝以启用相关功能。`,`${data.xbAccount} binded successfully! Please relogin Xiaobao to enable related features.`));
+                    try {
+                        document.getElementById("note-text-2").innerText = tlang(`绑定信息已加密安全储存，且仅限该环境使用。`,`Authorization is securely stored with encryption and is limited to this environment only.`);
+                    } catch (e){}
                     unbindBtn.style.display= "block";
                     let TeamsBidingBtn = document.getElementById('bindMSAccountsBtn');
                     TeamsBidingBtn.innerText = tlang(`已绑定：${data.name}`,`Binded:${data.name}`);
