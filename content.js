@@ -1,4 +1,4 @@
-﻿let version = "1.1.1";
+let version = "1.1.1";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -20,10 +20,16 @@ function runWhenElementReady(selector, callback, interval, maxAttempts) {
 runWhenElementReady('link', diyHomepage, 10, 5);
 runWhenElementReady('link', diyHomepage, 100, 3);
 
+const selectByPrefix = (prefix, root = document) =>
+    root.querySelector(`[class*="${prefix}"]`);
+
+const selectAllByPrefix = (prefix, root = document) =>
+    root.querySelectorAll(`[class*="${prefix}"]`);
+
 function waitForElement() {
     let targetElement;
     try {
-        targetElement = document.getElementsByClassName("fe-components-stu-business-topbar-__profileItemBox--2Zu-vui7zBJ7o6w5lP-ugN")[0].childNodes[8];
+        targetElement = selectByPrefix('fe-components-stu-business-topbar-__profileItemBox').childNodes[8];
     } catch (error) {}
     if (targetElement) {
         setTimeout(function() {
@@ -49,11 +55,11 @@ function waitForElement() {
 }
 
 function addBtnBindings(){
-    document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].addEventListener('click', function() {
+    document.querySelector('.ng-binding.ng-scope[class*="fe-components-stu-business-topbar-__profileItem"]').addEventListener('click', function() {
         showTeamsMainPannelBtn();
     });
-    document.getElementsByClassName("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].addEventListener('click', function() {
-        document.getElementsByClassName("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].click();
+    document.querySelector('[class*="fe-components-stu-common-stu-arc-button-__arcbtn"][class*="fe-components-stu-common-stu-arc-button-__current"]').addEventListener('click', function() {
+        document.querySelector('.ng-binding.ng-scope[class*="fe-components-stu-business-topbar-__profileItem"]').click();
     });
 
 }
@@ -61,7 +67,7 @@ function addBtnBindings(){
 if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
     waitForElement(); // Start polling immediately
     setTimeout(function() {
-        if(!document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR")[0]){
+        if(!document.querySelector('.ng-binding[class*="fe-components-stu-business-login-enter-box-__forgetLink"]')){
             send_comp_msg("bp-checkOutdatedScore","1",0);
         }
 
@@ -75,7 +81,7 @@ if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
 }
 
 setInterval(function() {
-    if (!document.getElementsByClassName("ng-binding fe-components-stu-business-login-enter-box-__forgetLink--33qRdR5UpfjVrt3C_MdyYR")[0]) {
+    if (!document.querySelector('.ng-binding[class*="fe-components-stu-business-login-enter-box-__forgetLink"]')) {
       send_comp_msg("bp-checkOutdatedScore", "1", 0);
     }
   }, 300000);
