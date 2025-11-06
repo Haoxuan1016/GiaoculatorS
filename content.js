@@ -65,6 +65,71 @@ const queryAllByClassNames = (classNames, root = document) => {
 const queryByClassNames = (classNames, root = document) =>
     queryAllByClassNames(classNames, root)[0] || null;
 
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
+
+function isISODateString(value) {
+    return typeof value === 'string' && ISO_DATE_REGEX.test(value.trim());
+}
+
+function parseCSharpDateString(value) {
+    const match = /^\/Date\((\d+)([+-]\d{4})?\)\/$/.exec(value);
+    if (!match) {
+        return null;
+    }
+    const timestamp = parseInt(match[1], 10);
+    if (Number.isNaN(timestamp)) {
+        return null;
+    }
+    return new Date(timestamp);
+}
+
+function ensureSchoolisDate(value) {
+    if (!value) {
+        return null;
+    }
+    if (value instanceof Date) {
+        return Number.isNaN(value.getTime()) ? null : value;
+    }
+    if (typeof value === 'number') {
+        const dateFromNumber = new Date(value);
+        return Number.isNaN(dateFromNumber.getTime()) ? null : dateFromNumber;
+    }
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        const csharpDate = parseCSharpDateString(trimmed);
+        if (csharpDate) {
+            return csharpDate;
+        }
+        if (isISODateString(trimmed)) {
+            const isoDate = new Date(trimmed);
+            return Number.isNaN(isoDate.getTime()) ? null : isoDate;
+        }
+        const directDate = new Date(trimmed);
+        if (!Number.isNaN(directDate.getTime())) {
+            return directDate;
+        }
+        const normalized = trimmed.replace(/-/g, '/');
+        const fallbackDate = new Date(normalized);
+        return Number.isNaN(fallbackDate.getTime()) ? null : fallbackDate;
+    }
+    return null;
+}
+
+function compareSchoolisDates(a, b) {
+    const dateA = ensureSchoolisDate(a);
+    const dateB = ensureSchoolisDate(b);
+    if (!dateA && !dateB) {
+        return 0;
+    }
+    if (!dateA) {
+        return 1;
+    }
+    if (!dateB) {
+        return -1;
+    }
+    return dateA.getTime() - dateB.getTime();
+}
+
 if(selectByPrefix===undefined){
     const selectByPrefix = (prefix, root = document) =>
         root.querySelector(`[class*="${prefix}"]`);
@@ -3930,11 +3995,14 @@ async function updateSyncPanels(panelId){
         document.getElementById(syncCont).innerText = tlang("未同步","Not Synced");
         return;
     }
-    let sync1Tip = tlang("上次同步时间：","Last Sync Time:") + 
-        (lastSyncData.lastSyncTime  
+    let sync1Tip = tlang("上次同步时间：","Last Sync Time:") +
+        (lastSyncData.lastSyncTime
             ? (() => {
-                let d = new Date(lastSyncData.lastSyncTime);
-                d = new Date(d.getTime());
+                const resolvedDate = ensureSchoolisDate(lastSyncData.lastSyncTime);
+                if (!resolvedDate) {
+                    return lastSyncData.lastSyncTime;
+                }
+                const d = new Date(resolvedDate.getTime());
                 let yyyy = d.getFullYear();
                 let mm = String(d.getMonth() + 1).padStart(2, '0');
                 let dd = String(d.getDate()).padStart(2, '0');
@@ -3944,15 +4012,18 @@ async function updateSyncPanels(panelId){
             })()
             : ""
         );
-    document.getElementById(syncCont).innerText = sync1Tip;function formatISOString(isoString) {
-        if (!isoString) return '';
-        return isoString.split('T')[0];
-    }
+    document.getElementById(syncCont).innerText = sync1Tip;
 }
 
 function formatISOString(isoString) {
-    if (!isoString) return '';
-    return isoString.split('T')[0];
+    const date = ensureSchoolisDate(isoString);
+    if (!date) {
+        return '';
+    }
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
 }
 function startTeamsPanel(tasks){
     console.log("startTeamsPanel",tasks);
@@ -3995,23 +4066,25 @@ function startTeamsPanel(tasks){
     // Format date to display
     function formatDate(dateString) {
         const options = { month: 'short', day: 'numeric', year: 'numeric' };
-        return new Date(dateString).toLocaleDateString(undefined, options);
+        const date = ensureSchoolisDate(dateString);
+        return date ? date.toLocaleDateString(undefined, options) : '';
     }
 
     function formatShortDate(dateString) {
         const options = { month: 'short', day: 'numeric' };
-        return new Date(dateString).toLocaleDateString(undefined, options);
+        const date = ensureSchoolisDate(dateString);
+        return date ? date.toLocaleDateString(undefined, options) : '';
     }
 
     function formatDateTime(dateString) {
-        if (!dateString) return '';
-        const date = new Date(dateString);
+        const date = ensureSchoolisDate(dateString);
+        if (!date) return '';
         const now = new Date();
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
         const day = date.getDate().toString().padStart(2, '0');
         const hours = date.getHours().toString().padStart(2, '0');
         const minutes = date.getMinutes().toString().padStart(2, '0');
-        
+
         const timeDiff = date.getTime() - now.getTime();
         const hoursRemaining = Math.ceil(timeDiff / (1000 * 60 * 60));
         
@@ -4031,9 +4104,9 @@ function startTeamsPanel(tasks){
                 return b.state - a.state;
             }
             if (sortBy === 'due') {
-                return new Date(a.dueDate) - new Date(b.dueDate);
+                return compareSchoolisDates(a.dueDate, b.dueDate);
             } else if (sortBy === 'published') {
-                return new Date(b.published) - new Date(a.published); 
+                return compareSchoolisDates(b.published, a.published);
             }
             return 0;
         });
@@ -4108,7 +4181,8 @@ function startTeamsPanel(tasks){
             } else {
                 dueDateText = formatDateTime(assignment.dueDate);
             }
-            const isPastDue = !isIgnored && new Date(assignment.dueDate).getTime() < new Date().getTime();
+            const dueDateObject = ensureSchoolisDate(assignment.dueDate);
+            const isPastDue = !isIgnored && dueDateObject && dueDateObject.getTime() < Date.now();
             
             item.innerHTML = `
                 <span class="status ${statusColor}"></span>
@@ -4128,7 +4202,8 @@ function startTeamsPanel(tasks){
     function showAssignmentModal(assignment) {
         let submissionStateText = '';
         let submissionStateColor = '';
-        if (new Date(assignment.dueDate) < new Date() && (assignment.submissionState !== 'submitted' && assignment.submissionState !== 'returned')) {
+        const assignmentDueDate = ensureSchoolisDate(assignment.dueDate);
+        if (assignmentDueDate && assignmentDueDate < new Date() && (assignment.submissionState !== 'submitted' && assignment.submissionState !== 'returned')) {
             assignment.submissionState = 'late';
         }
         switch (assignment.submissionState.toUpperCase()) {
