@@ -1,13 +1,14 @@
-let forRibbon_lastHighScore = 999;
+﻿let forRibbon_lastHighScore = 999;
 let forRibbon_lastUserScore = -1;
 let forRibbon_lastAvgScore = 999;
 
-const selectByPrefix = (prefix, root = document) =>
-    root.querySelector(`[class*="${prefix}"]`);
+if(selectByPrefix===undefined){
+    const selectByPrefix = (prefix, root = document) =>
+        root.querySelector(`[class*="${prefix}"]`);
 
-const selectAllByPrefix = (prefix, root = document) =>
-    root.querySelectorAll(`[class*="${prefix}"]`);
-
+    const selectAllByPrefix = (prefix, root = document) =>
+        root.querySelectorAll(`[class*="${prefix}"]`);
+}
 (function () {
     const TARGET_URL_PART = '/task/list/detail';
     const TARGET_SELECTOR = 'div[ng-class*="styles.middleItem"]';

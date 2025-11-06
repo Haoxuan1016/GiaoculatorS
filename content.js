@@ -1,4 +1,4 @@
-let version = "1.1.1";
+﻿let version = "1.1.1";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -20,12 +20,13 @@ function runWhenElementReady(selector, callback, interval, maxAttempts) {
 runWhenElementReady('link', diyHomepage, 10, 5);
 runWhenElementReady('link', diyHomepage, 100, 3);
 
-const selectByPrefix = (prefix, root = document) =>
-    root.querySelector(`[class*="${prefix}"]`);
+if(selectByPrefix===undefined){
+    const selectByPrefix = (prefix, root = document) =>
+        root.querySelector(`[class*="${prefix}"]`);
 
-const selectAllByPrefix = (prefix, root = document) =>
-    root.querySelectorAll(`[class*="${prefix}"]`);
-
+    const selectAllByPrefix = (prefix, root = document) =>
+        root.querySelectorAll(`[class*="${prefix}"]`);
+}
 function waitForElement() {
     let targetElement;
     try {
