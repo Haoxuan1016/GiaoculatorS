@@ -82,6 +82,29 @@ function parseCSharpDateString(value) {
     }
     return new Date(timestamp);
 }
+function findHashedClass(prefix, root = document) {
+  // 拆分输入字符串，支持多个 class（例如 ng-binding + fe-xxx）
+  const parts = prefix.trim().split(/\s+/);
+  const lastPart = parts[parts.length - 1];
+
+  // 构建正则，匹配 “prefix--哈希” 的模式
+  const hashRegex = new RegExp(`^${lastPart}--[A-Za-z0-9_-]{6,}$`);
+
+  // 遍历所有 DOM 节点，查找符合条件的 class
+  const all = root.querySelectorAll('[class]');
+  for (const el of all) {
+    for (const cls of el.classList) {
+      if (hashRegex.test(cls)) {
+        // 若还有其它类（如 ng-binding）要求同时存在，也检查
+        const allMatch = parts
+          .slice(0, -1)
+          .every((p) => el.classList.contains(p));
+        if (allMatch) return cls;
+      }
+    }
+  }
+  return null;
+}
 
 function ensureSchoolisDate(value) {
     if (!value) {
@@ -2171,7 +2194,8 @@ function showGPAcount(redotimes,data){
                 showGB = false;
             }
         }
-        let newHtml="<ul id='gcalc_gpacntstate' ng-class='[styles.scoreListItem,commonStyles.clearFix]' class='fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <!-- ngRepeat: items in $ctrl.evaluationProjectList --><!-- end ngRepeat: items in $ctrl.evaluationProjectList --><li ng-repeat='items in $ctrl.evaluationProjectList' class='ng-scope'> <ul ng-class='commonStyles.clearFix' ng-click='toggleChildItem($index)' class='fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <li ng-class='[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]' class='ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel--IDO2v_3UsPFqDDV9iQ2ml' style='font-size:"+tlang(13,11)+"px'>"+tiptext+"</li> <li ng-class='[styles.scoreListItemWeight, styles.scoreListItemScoreWeight]' class='ng-binding fe-components-stu-app-realtime-list-__scoreListItemWeight--285HojRL7boCDLSqVG3jB-'></li> <li ng-class='[styles.scoreListItemScore, styles.scoreListItemScoreWeight]' id='gcalc_diyboxbtn' class='fe-components-stu-app-realtime-list-__scoreListItemScore--1SnqOFUX5PHAR3L-RwXhkl'> <span class='ng-binding'></span> <!-- ngIf: items.evaluationProjectList.length>0 && items.showChild --> <!-- ngIf: items.evaluationProjectList.length>0 && !items.showChild --> </li> </ul> </li></ul>"
+        
+        let newHtml="<ul id='gcalc_gpacntstate' ng-class='[styles.scoreListItem,commonStyles.clearFix]' class='fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <!-- ngRepeat: items in $ctrl.evaluationProjectList --><!-- end ngRepeat: items in $ctrl.evaluationProjectList --><li ng-repeat='items in $ctrl.evaluationProjectList' class='ng-scope'> <ul ng-class='commonStyles.clearFix' ng-click='toggleChildItem($index)' class='fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <li ng-class='[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]' class='"+ findHashedClass("ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel") + "' style='font-size:"+tlang(13,11)+"px'>"+tiptext+"</li> <li ng-class='[styles.scoreListItemWeight, styles.scoreListItemScoreWeight]' class='ng-binding fe-components-stu-app-realtime-list-__scoreListItemWeight--285HojRL7boCDLSqVG3jB-'></li> <li ng-class='[styles.scoreListItemScore, styles.scoreListItemScoreWeight]' id='gcalc_diyboxbtn' class='fe-components-stu-app-realtime-list-__scoreListItemScore--1SnqOFUX5PHAR3L-RwXhkl'> <span class='ng-binding'></span> <!-- ngIf: items.evaluationProjectList.length>0 && items.showChild --> <!-- ngIf: items.evaluationProjectList.length>0 && !items.showChild --> </li> </ul> </li></ul>"
         let targetDiv = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c');
         if (targetDiv) {
             targetDiv.insertAdjacentHTML('beforeend', newHtml);
@@ -3665,7 +3689,7 @@ async function showGPABox(){
             queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[2].innerText=tlang("GPA / 未加权GPA","GPA / Unweighted GPA");
             let sublineA = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[0];
             let sublineB = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[1];
-            let bigScore = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__score--1e6GrTtGfRHkKF-12OE_J3")[0];
+            let bigScore = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__score--3U_eJ7HbMjTKZkN2XLzX3S")[0];
 
             bigScore.innerText=schoolis_gpa?schoolis_gpa:gpa;
             bigScore.style.marginTop="-12px";

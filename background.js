@@ -405,24 +405,75 @@ async function C_CalcSms(semesterId,bgn_info,end_info,semesterType,year) {
     }
 }
 
-function dateConvert(csharpDateString) {
-    const regex = /\/Date\((\d+)([-+]\d+)\)\//;
-    const match = csharpDateString.match(regex);
-  
-    if (match) {
-      const timestamp = parseInt(match[1], 10);
-  
-      const date = new Date(timestamp);
-  
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0'); 
-      const day = String(date.getDate()).padStart(2, '0');
-  
-      return `${year}-${month}-${day}`;
-    } else {
-      return "2000-01-01";
+// Accept both legacy C# /Date(…)/ and ISO date strings
+function isISODateString(str) {
+    if (typeof str !== 'string') return false;
+    // Matches YYYY-MM-DD or full ISO 8601 with time and optional Z/offset
+    return /^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(str);
+}
+
+function dateConvert(input) {
+    const csharpRegex = /\/Date\((\d+)([-+]\d+)?\)\//;
+    if (!input && input !== 0) return "2000-01-01";
+
+    // If already a Date
+    if (input instanceof Date) {
+        const d = input;
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
     }
-  }
+
+    // If numeric timestamp
+    if (typeof input === 'number') {
+        const d = new Date(input);
+        if (!isNaN(d)) {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+    }
+
+    // If string input
+    if (typeof input === 'string') {
+        const match = input.match(csharpRegex);
+        if (match) {
+            const timestamp = parseInt(match[1], 10);
+            const d = new Date(timestamp);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+        if (isISODateString(input)) {
+            const d = new Date(input);
+            if (!isNaN(d)) {
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
+        }
+        // If already YYYY-MM-DD, pass through
+        if (/^\d{4}-\d{2}-\d{2}$/.test(input)) {
+            return input;
+        }
+        // If numeric string timestamp
+        if (/^\d{10,13}$/.test(input)) {
+            const d = new Date(parseInt(input, 10));
+            if (!isNaN(d)) {
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }
+        }
+    }
+
+    return "2000-01-01";
+}
 
 function C_ShortenDataBeforeFill(data) {
     const uniqueData = [];
@@ -2299,10 +2350,23 @@ async function T_SetAssignmentAlert_XBAssignment() {
                     // Parse the endTime from the API response format
                     let endTimeDate = null;
                     if (assignment.endTime) {
-                        // Parse the date format: "/Date(1760710800000+0800)/"
-                        const match = assignment.endTime.match(/\/Date\((\d+)/);
-                        if (match) {
-                            endTimeDate = new Date(parseInt(match[1]));
+                        // Accept legacy C# /Date(...) or ISO8601 strings
+                        if (typeof assignment.endTime === 'string') {
+                            const dotnetMatch = assignment.endTime.match(/\/Date\((\d+)/);
+                            if (dotnetMatch) {
+                                endTimeDate = new Date(parseInt(dotnetMatch[1]));
+                            } else if (isISODateString(assignment.endTime)) {
+                                const d = new Date(assignment.endTime);
+                                if (!isNaN(d)) endTimeDate = d;
+                            } else if (/^\d{10,13}$/.test(assignment.endTime)) {
+                                const d = new Date(parseInt(assignment.endTime, 10));
+                                if (!isNaN(d)) endTimeDate = d;
+                            }
+                        } else if (typeof assignment.endTime === 'number') {
+                            const d = new Date(assignment.endTime);
+                            if (!isNaN(d)) endTimeDate = d;
+                        } else if (assignment.endTime instanceof Date) {
+                            endTimeDate = assignment.endTime;
                         }
                     }
                     
@@ -2748,13 +2812,24 @@ async function T_SyncToTeamsCalender() {
 							if (calendershift !== 1) {
 								return { begin: beginDotNet, end: endDotNet };
 							}
-							const matchBegin = /\/Date\((\d+)([+-]\d{4})\)\//.exec(beginDotNet);
-							const matchEnd = /\/Date\((\d+)([+-]\d{4})\)\//.exec(endDotNet);
-							if (!matchBegin || !matchEnd) {
+							const parseMaybeDate = (val) => {
+								try {
+									if (val instanceof Date) return val;
+									if (typeof val === 'number') return new Date(val);
+									if (typeof val === 'string') {
+										const m = /\/Date\((\d+)([+-]\d{4})?\)\//.exec(val);
+										if (m) return new Date(parseInt(m[1], 10));
+										if (isISODateString(val)) return new Date(val);
+										if (/^\d{10,13}$/.test(val)) return new Date(parseInt(val, 10));
+									}
+								} catch (_) { }
+								return null;
+							};
+							const beginDate = parseMaybeDate(beginDotNet);
+							const endDate = parseMaybeDate(endDotNet);
+							if (!beginDate || !endDate || isNaN(beginDate) || isNaN(endDate)) {
 								return { begin: beginDotNet, end: endDotNet };
 							}
-							const beginDate = new Date(parseInt(matchBegin[1], 10));
-							const endDate = new Date(parseInt(matchEnd[1], 10));
 							const bH = beginDate.getHours();
 							const bM = beginDate.getMinutes();
 							const eH = endDate.getHours();
@@ -2870,11 +2945,43 @@ async function T_addToMSCalendar(startTime, endTime, location, title, content, t
   
 }
 
-function convertToMSDate(dotNetDateString) {
-  const match = /\/Date\((\d+)([+-]\d{4})\)\//.exec(dotNetDateString);
-  const timestamp = parseInt(match[1], 10);
-  const date = new Date(timestamp);
-  return date.toISOString();
+function convertToMSDate(input) {
+  try {
+    if (input == null) return '';
+    // Already a Date
+    if (input instanceof Date) {
+      return input.toISOString();
+    }
+    // Numeric timestamp
+    if (typeof input === 'number') {
+      const d = new Date(input);
+      return isNaN(d) ? '' : d.toISOString();
+    }
+    if (typeof input === 'string') {
+      // ISO format
+      if (isISODateString(input)) {
+        const d = new Date(input);
+        return isNaN(d) ? '' : d.toISOString();
+      }
+      // C# /Date(…)/ format
+      const match = /\/Date\((\d+)([+-]\d{4})?\)\//.exec(input);
+      if (match) {
+        const timestamp = parseInt(match[1], 10);
+        const d = new Date(timestamp);
+        return isNaN(d) ? '' : d.toISOString();
+      }
+      // Numeric string timestamp
+      if (/^\d{10,13}$/.test(input)) {
+        const d = new Date(parseInt(input, 10));
+        return isNaN(d) ? '' : d.toISOString();
+      }
+    }
+    // Fallback best-effort
+    const d = new Date(input);
+    return isNaN(d) ? '' : d.toISOString();
+  } catch (e) {
+    return '';
+  }
 }
 
 function convertToXBDate(isoString) {
