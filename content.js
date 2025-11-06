@@ -65,6 +65,13 @@ const queryAllByClassNames = (classNames, root = document) => {
 const queryByClassNames = (classNames, root = document) =>
     queryAllByClassNames(classNames, root)[0] || null;
 
+if(selectByPrefix===undefined){
+    const selectByPrefix = (prefix, root = document) =>
+        root.querySelector(`[class*="${prefix}"]`);
+
+    const selectAllByPrefix = (prefix, root = document) =>
+        root.querySelectorAll(`[class*="${prefix}"]`);
+}
 function waitForElement() {
     let targetElement;
     try {
