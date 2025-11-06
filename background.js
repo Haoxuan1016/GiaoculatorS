@@ -797,6 +797,7 @@ function formatNumber(number, decimalPlaces) {
 }
 
 async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterType, year) {
+    console.log("BGN_END_INFO",bgn_info,end_info);
     const subjectData = []; // 存储每个科目的数据
     let specialWeightRules = await getFromChromeStorage("specialWeightRules")
     let weightRules = await getFromChromeStorage("subjectWeightRules")
@@ -820,7 +821,7 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
-
+            console.log("[init_V2Calc]Fetched URL:",url,response);
             if (response.ok) {
 
                 let isV1 = false;
@@ -830,6 +831,7 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
                 if(data.data === null || data.state!= 0 ){
                     console.warn(`[V2Calc]Failed to fetch data,returning to V1`)
                     console.log(semesterId,subjectId,convertToMSDate(bgn_info).split('T')[0],convertToMSDate(end_info).split('T')[0]);
+                    console.log(`getSubjectGrades(${semesterId},${subjectId},${convertToMSDate(bgn_info).split('T')[0]},${convertToMSDate(end_info).split('T')[0]})`);
                     formed = await getSubjectGrades(semesterId,subjectId,convertToMSDate(bgn_info).split('T')[0],convertToMSDate(end_info).split('T')[0],classId);
                     console.log("V1Calc.Formed",formed)
                     data = formed.gradeDetails;
@@ -940,6 +942,8 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
                 //M_send_comp_msg("calcErrorStop", null, 0);
             }
         } catch (error) {
+            console.log("[init_V2Calc]Error:",error);
+            console.log(response);
             console.warn(`[init_V2Calc]BadResponce, Skipping: `);
             continue;
             console.error('[init_V2Calc] There has been a problem with your fetch operation:', error);

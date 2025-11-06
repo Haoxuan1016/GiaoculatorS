@@ -1,4 +1,4 @@
-let version = "1.1.1";
+﻿let version = "1.1.1";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -19,13 +19,13 @@ function runWhenElementReady(selector, callback, interval, maxAttempts) {
 // 使用示例：每隔 500ms 检查一次目标元素，最多检查 10 次
 runWhenElementReady('link', diyHomepage, 10, 5);
 runWhenElementReady('link', diyHomepage, 100, 3);
+if(selectByPrefix===undefined){
+    const selectByPrefix = (prefix, root = document) =>
+        root.querySelector(`[class*="${prefix}"]`);
 
-const selectByPrefix = (prefix, root = document) =>
-    root.querySelector(`[class*="${prefix}"]`);
-
-const selectAllByPrefix = (prefix, root = document) =>
-    root.querySelectorAll(`[class*="${prefix}"]`);
-
+    const selectAllByPrefix = (prefix, root = document) =>
+        root.querySelectorAll(`[class*="${prefix}"]`);
+}
 const byClassPrefix = (prefix) => `[class*="${prefix}"]`;
 
 const normalizeSelector = (selector) =>
