@@ -1,4 +1,4 @@
-﻿let version = "1.1.1";
+﻿let version = "1.2.3";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -1246,7 +1246,7 @@ document.onkeydown = function(e) {//快捷键
 
 function simulateClickLogin() {
     try{
-        queryAllByClassNames("fe-components-stu-business-login-enter-box-__signBtn--2VrsqhNGgcjYTh7LuAGzve")[0].click();
+        queryAllByClassNames("ng-binding fe-components-stu-business-login-enter-box-__signBtn--vqaowAg9R6jMv5h-QLc8U")[0].click();
     }catch{
 
     }

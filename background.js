@@ -22,6 +22,7 @@
                         if(update.length>10){
                             M_send_str_msg("tip_update",update,0);
                             saveToChromeStorage("updateMsg", "");
+                            M_send_str_msg("rib_fwk", 0.5, 0);
                         }
                         
                     });
@@ -80,11 +81,9 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【功能】新分数刮一刮功能已上线！</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【功能】登录界面新增一次性“访客模式”选项</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【功能】优化了“隐藏低分外显”功能的稳定性</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】课程表同步设置中新增“是否触发提醒”选项，默认关闭</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】优化了一些反馈的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【🎉修复了由于校宝系统更新导致功能失效的问题，所有功能已恢复】</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【刮一刮】修复了部分情况下无法刮开的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】优化了绑定后每次进入时的体验，修复了已绑定情况下有概率提示暂未绑定的问题</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -92,16 +91,16 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· [Feature] New Scratch Score feature launched!</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· [Feature] New "Guest Mode" option added in login page for one-time use</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· [Feature] Improved stability of "Hide Low Scores" feature</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· [Teams Organizer] New "Whether to trigger reminders" option added in timetable sync settings, default is off</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· [Teams Organizer] Some feedback issues have been fixed</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 🎉 Fixed an issue caused by Xiaobao system update that broke functionality.</p> 
+    <p style="margin-bottom: 2px; margin-top: 2px;">· 【Scratch Card】Fixed an issue where scratching sometimes failed.</p>
+    <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】Improved post-binding experience and fixed occasional false “not bound” prompts.</p>
+
     </div>
     
     `)
         
         saveToChromeStorage("updateMsg", updatedMsg);
+        
         
     }
     else{
