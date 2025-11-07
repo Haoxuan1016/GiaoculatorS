@@ -110,8 +110,10 @@ chrome.runtime.onInstalled.addListener(function(details) {
           url: chrome.runtime.getURL("welcome.html")
         });
     }
-    
+
 });
+
+let MSAuthRetryInProgress = false;
 
 async function saveToChromeStorage(keyName, obj) {
     try {
@@ -1517,6 +1519,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case "bp-refreshTeamsTask":
             T_fetchTeamsUserClassesAndAssignments();
             break;
+        case "bp-forceInitMS":
+            M_StartMSFeatures();
+            break;
         case "bp-startSyncXBTask":
             T_startXBTaskSync();
             break;
@@ -2063,6 +2068,26 @@ function T_fetchOneDriveFiles(){
 }
 
 
+async function T_retryTeamsInitAfterAuthFailure() {
+    if (MSAuthRetryInProgress) {
+        return;
+    }
+    MSAuthRetryInProgress = true;
+    try {
+        const state = await T_initMS();
+        if (state === 1) {
+            await saveToChromeStorage("MS_ReauthRequired", false);
+            T_fetchTeamsUserClassesAndAssignments();
+        } else {
+            await saveToChromeStorage("MS_ReauthRequired", true);
+        }
+    } catch (error) {
+        console.error('[TeamsAuthRetry] Failed to re-init Teams auth', error);
+    } finally {
+        MSAuthRetryInProgress = false;
+    }
+}
+
 // 从chrome.storage.local获取保存的访问令牌，获取用户的课程信息并输出所有作业
 function T_fetchTeamsUserClassesAndAssignments() {
     getFromChromeStorage("MSTasks").then(tasks => {
@@ -2081,6 +2106,9 @@ function T_fetchTeamsUserClassesAndAssignments() {
                 }
             })
             .then(response => {
+                if (response.status === 401 || response.status === 403) {
+                    throw { isAuthError: true, status: response.status };
+                }
                 if (!response.ok) {
                     throw new Error('Failed to fetch user classes');
                 }
@@ -2106,6 +2134,9 @@ function T_fetchTeamsUserClassesAndAssignments() {
                         }
                     })
                     .then(response => {
+                        if (response.status === 401 || response.status === 403) {
+                            throw { isAuthError: true, status: response.status };
+                        }
                         if (!response.ok) {
                             throw new Error(`Failed to fetch assignments for class ${className}`);
                         }
@@ -2175,7 +2206,12 @@ function T_fetchTeamsUserClassesAndAssignments() {
                         }
                     })  
                     .catch(error => {
-                        console.error(`Error fetching assignments for class ${className}:`, error);
+                        if (error && error.isAuthError) {
+                            console.warn(`[TeamsFetch] Auth error when fetching assignments for ${className}.`);
+                            T_retryTeamsInitAfterAuthFailure().catch(() => {});
+                        } else {
+                            console.error(`Error fetching assignments for class ${className}:`, error);
+                        }
                     });
                 });
     
@@ -2200,7 +2236,12 @@ function T_fetchTeamsUserClassesAndAssignments() {
                 
             })
             .catch(error => {
-                console.error('Error fetching user classes:', error);
+                if (error && error.isAuthError) {
+                    console.warn('[TeamsFetch] Auth error when fetching classes.');
+                    T_retryTeamsInitAfterAuthFailure().catch(() => {});
+                } else {
+                    console.error('Error fetching user classes:', error);
+                }
             });
         });
     });
@@ -2447,13 +2488,16 @@ async function M_BindMSAccount(xbAccount) {
         let userProfile = await fetchTeamsUserProfile();
         if (userProfile.state === 1) {
             console.log("M_BindMSAccount[FetchTeamsUserProfile]", userProfile);
-            saveToChromeStorage("MSUserProfile", {
+            const updatedProfile = {
                 name: userProfile.displayName,
                 email: userProfile.mail,
                 state: 1,
                 xbAccount: xbAccount,
                 showGuide: isNewBind ? true : false
-            });
+            };
+            await saveToChromeStorage("MSUserProfile", updatedProfile);
+            await saveToChromeStorage("MS_PanelNeedInit", true);
+            await saveToChromeStorage("MS_ReauthRequired", false);
             M_send_comp_msg("MSAccountBinded", null, 0);
             
         } else {
@@ -2462,6 +2506,7 @@ async function M_BindMSAccount(xbAccount) {
         }
     } catch (error) {
         console.error("M_BindMSAccount Error:", error.message || error);
+        await saveToChromeStorage("MS_ReauthRequired", true);
         M_send_comp_msg("MSAccountBindFailed", (error.message || error)+("  [CR]extId:")+chrome.runtime.id, 0);
     }
 }
@@ -2603,6 +2648,8 @@ async function M_StartMSFeatures() {
         } else {
             console.log("![TS]MS Account Matched!!");
             saveToChromeStorage("MSFeatureEnabled", true);
+            saveToChromeStorage("MS_PanelNeedInit", false);
+            saveToChromeStorage("MS_ReauthRequired", false);
             T_fetchTeamsUserClassesAndAssignments();
             T_checkCalenderSync();
             T_checkTeamsTaskSync();
@@ -2626,15 +2673,18 @@ async function T_initMS() {
         if (MSAccountData.state === -1) {
             //M_send_comp_msg("tip_err", { cont: "失败: " + MSAccountData.error }, 0);
             console.log("[T_INITMS]Failed");
+            await saveToChromeStorage("MS_ReauthRequired", true);
             M_BindMSAccount("Rebind");
             return 0;
         } else {
             console.log("[T_INITMS]Success at 2",MSAccountData);
             //M_send_comp_msg("tip_suc", { cont: "成功" }, 0);
-            return 1; 
+            await saveToChromeStorage("MS_ReauthRequired", false);
+            return 1;
         }
         } else {
         console.log("[T_INITMS]Success at 1", MSAccountData);
+        await saveToChromeStorage("MS_ReauthRequired", false);
         }
 
         return 1;
