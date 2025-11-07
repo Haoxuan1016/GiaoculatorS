@@ -3936,46 +3936,68 @@ function showTeamsMainPannelBtn(){
     if (parentElement) {
         parentElement.insertAdjacentHTML('afterbegin', btnHtml);
         setTimeout(() => {
-            document.getElementById("gc_teamsMainBtn").addEventListener('click', function() {
-                getFromChromeStorage("MSFeatureEnabled").then(enabled=>{
-                    if(enabled){
-                        switchToTeamsPanel();
-                        setTimeout(() => {
-                            getFromChromeStorage("MSUserProfile").then(profile=>{
-                                if(profile?.showGuide){
-                                    createPopup(8, {
-                                        title: tlang("Teams Organizer入门：在Outlook®APP中查看课表和提醒","Getting Started with Teams Organizer: View Schedule and Reminders in Outlook® APP"),
-                                        images: ['https://x19.fp.ps.netease.com/file/68fe4597c4cdd10497fcea41ZYWVsWzo06','https://x19.fp.ps.netease.com/file/68fe45aa7e5097add65b0e28q7m4cHKa06','https://x19.fp.ps.netease.com/file/68fe45c173a867596657f0d3Y16tEhek06','https://x19.fp.ps.netease.com/file/68fe4ac9b9670ef5ddd86eb0QYaC9S5E06'],
-                                        text:[tlang("同步的日程会出现在对应Teams账号中","Synced schedules will appear in the corresponding Teams account"),tlang("如需添加小组件 下载Outlook® APP并登录","Download Outlook® APP and login to use small widgets"),tlang("可添加Outlook小组件在桌面或锁屏界面","Add Outlook widgets to desktop or lock screen"),tlang("无需手动操作：登录校宝，系统自动同步","Auto Sync: Login Schoolis , Sync as Schedule")]
-                                    });
-                                }
-                                saveToChromeStorage("MSUserProfile",{...profile,showGuide:false});
-                            });
-                            
-                        }, 1800);
-                    }else{
-                        try {
-                            getFromChromeStorage("MSUserProfile").then(profile=>{
-                                if(profile?.showGuide){
-                                    createPopup(2,{text:tlang(`绑定成功，请使用【${profile?.xbAccount}】重新登录校宝系统以启用Teams Organizer功能`,`Re-login to Schoolis with ${profile?.xbAccount} to enable Teams Organizer`)});
-                                }else{
-                                    createPopup(1, {
-                                        title: tlang("绑定账号以启用Teams Organizer功能","Bind an account to enable Teams Organizer"),
-                                        images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe3b3136c8122042a30633BZiX4j0H06','https://x19.fp.ps.netease.com/file/68fe42052f2abaeb78cad4cd6gABb28K06']
-                                        ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("在Outlook®APP中查看课表和提醒","View schedule and reminders in Outlook® APP"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")] 
-                                    });
-                                }
-                            });
-                        } catch (e) {
-                            createPopup(1, {
-                                title: tlang("绑定账号以启用Teams Organizer功能","Bind an account to enable Teams Organizer"),
-                                images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe3b3136c8122042a30633BZiX4j0H06','https://x19.fp.ps.netease.com/file/68fe42052f2abaeb78cad4cd6gABb28K06']
-                                ,text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("在Outlook®APP中查看课表和提醒","View schedule and reminders in Outlook® APP"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")] 
-                            });
+            document.getElementById("gc_teamsMainBtn").addEventListener('click', async function() {
+                try {
+                    const [enabled, profile, refreshToken, panelNeedInit, reauthRequired] = await Promise.all([
+                        getFromChromeStorage("MSFeatureEnabled"),
+                        getFromChromeStorage("MSUserProfile"),
+                        getFromChromeStorage("MSrefresh_token"),
+                        getFromChromeStorage("MS_PanelNeedInit"),
+                        getFromChromeStorage("MS_ReauthRequired")
+                    ]);
+
+                    const hasRefreshToken = typeof refreshToken === 'string' ? refreshToken.length > 0 : !!refreshToken;
+
+                    if (enabled) {
+                        const now = Date.now();
+                        const lastOpenRaw = await getFromChromeStorage("MSPanelLastopen");
+                        const lastOpenTs = typeof lastOpenRaw === 'number' ? lastOpenRaw : Number(lastOpenRaw);
+                        const shouldRefresh = !lastOpenTs || Number.isNaN(lastOpenTs) || (now - lastOpenTs > 20 * 60 * 1000);
+
+                        await saveToChromeStorage("MSPanelLastopen", now);
+
+                        if (panelNeedInit) {
+                            sendAlerttip(tlang("正在初始化Teams数据，请稍候...","Initializing Teams data, please wait..."));
+                            try { chrome.runtime.sendMessage({ type: 'bp-forceInitMS' }); } catch (e) {}
                         }
-                         
+
+                        if (shouldRefresh) {
+                            sendAlerttip(tlang("正在刷新Teams任务，请稍候...","Refreshing Teams assignments, please wait..."));
+                            try { chrome.runtime.sendMessage({ type: 'bp-refreshTeamsTask' }); } catch (e) {}
+                        }
+
+                        switchToTeamsPanel();
+
+                        setTimeout(() => {
+                            if (profile?.showGuide) {
+                                createPopup(8, {
+                                    title: tlang("Teams Organizer入门：在Outlook®APP中查看课表和提醒","Getting Started with Teams Organizer: View Schedule and Reminders in Outlook® APP"),
+                                    images: ['https://x19.fp.ps.netease.com/file/68fe4597c4cdd10497fcea41ZYWVsWzo06','https://x19.fp.ps.netease.com/file/68fe45aa7e5097add65b0e28q7m4cHKa06','https://x19.fp.ps.netease.com/file/68fe45c173a867596657f0d3Y16tEhek06','https://x19.fp.ps.netease.com/file/68fe4ac9b9670ef5ddd86eb0QYaC9S5E06'],
+                                    text:[tlang("同步的日程会出现在对应Teams账号中","Synced schedules will appear in the corresponding Teams account"),tlang("如需添加小组件 下载Outlook® APP并登录","Download Outlook® APP and login to use small widgets"),tlang("可添加Outlook小组件在桌面或锁屏界面","Add Outlook widgets to desktop or lock screen"),tlang("无需手动操作：登录校宝，系统自动同步","Auto Sync: Login Schoolis , Sync as Schedule")]
+                                });
+                                saveToChromeStorage("MSUserProfile", { ...profile, showGuide: false });
+                            }
+                        }, 1800);
+                    } else {
+                        if (hasRefreshToken && !reauthRequired) {
+                            sendAlerttip(tlang("正在加载Teams数据，请稍候...","Loading Teams data, please wait..."));
+                            try { chrome.runtime.sendMessage({ type: 'bp-forceInitMS' }); } catch (e) {}
+                        } else {
+                            const popupConfig = {
+                                title: tlang("绑定账号以启用Teams Organizer功能","Bind an account to enable Teams Organizer"),
+                                images: ['https://x19.fp.ps.netease.com/file/68fe341456088707e6f82b31zzKy9veD06','https://x19.fp.ps.netease.com/file/68fe3b3136c8122042a30633BZiX4j0H06','https://x19.fp.ps.netease.com/file/68fe42052f2abaeb78cad4cd6gABb28K06'],
+                                text:[tlang("查看Teams平台任务","View Teams platform assignments"),tlang("在Outlook®APP中查看课表和提醒","View schedule and reminders in Outlook® APP"),tlang("同步课程表和DDL到日历","Sync schedule and assignment DDLs to calendar")]
+                            };
+                            try {
+                                createPopup(1, popupConfig);
+                            } catch (e) {
+                                createPopup(1, popupConfig);
+                            }
+                        }
                     }
-                });
+                } catch (error) {
+                    console.error('[TeamsPanel] Failed to handle panel button click', error);
+                }
             });
         }, 50);
     }
