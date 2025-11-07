@@ -515,7 +515,7 @@ async function C_v3Calc_matchClassIdUsingAssignmentId(subjectIdList, assignmentI
                         const subjectEntry = subjectIdList[subjectName];
                         if (subjectEntry.subjectId === data.data.subjectId && subjectEntry.classId === -1) {
                             subjectEntry.classId = data.data.classId;
-                            subjectEntry.className = subjectName+"#"+data.data.subjectId;//v3计算无法获取className，懒得改了，拿subejctcode替代
+                            subjectEntry.className = (subjectName.length>18? (subjectName.slice(0, 18)+".."):subjectName)+"#"+data.data.subjectId;//v3计算无法获取className，懒得改了，拿subejctcode替代
                             console.log("[C_v3Calc_matchClassIdUsingAssignmentId] Updated:", subjectEntry.subjectName, subjectEntry.classId);
                             return subjectIdList;
                         }
