@@ -1,20 +1,17 @@
-let forRibbon_lastHighScore = 999;
+﻿let forRibbon_lastHighScore = 999;
 let forRibbon_lastUserScore = -1;
 let forRibbon_lastAvgScore = 999;
 
-const selectByPrefix = (prefix, root = document) =>
-    root.querySelector(`[class*="${prefix}"]`);
 
-const selectAllByPrefix = (prefix, root = document) =>
-    root.querySelectorAll(`[class*="${prefix}"]`);
-
-if(selectByPrefix===undefined){
+try {
     const selectByPrefix = (prefix, root = document) =>
         root.querySelector(`[class*="${prefix}"]`);
 
     const selectAllByPrefix = (prefix, root = document) =>
         root.querySelectorAll(`[class*="${prefix}"]`);
-}
+} catch (e) {}
+
+
 (function () {
     const TARGET_URL_PART = '/task/list/detail';
     const TARGET_SELECTOR = 'div[ng-class*="styles.middleItem"]';
@@ -154,7 +151,39 @@ async function fun_scratchScore() {
     }
     
     
+    // Mark as a scratch layer for duplicate detection
+    try { canvas.classList.add('gx-scratch-layer'); } catch (_) {}
+    try { canvas.setAttribute('data-gx-scratch', '1'); } catch (_) {}
+
     parentDiv.appendChild(canvas);
+
+    // Real-time duplicate self-clean (every 300ms)
+    let duplicateCheckTimer = null;
+    const stopDuplicateCheck = () => { if (duplicateCheckTimer) { clearInterval(duplicateCheckTimer); duplicateCheckTimer = null; } };
+    const getScratchLayers = () => {
+        const list = Array.from(document.querySelectorAll(
+            'canvas.gx-scratch-layer, canvas[data-gx-scratch], canvas[style*="maskShimmer"]'
+        ));
+        // Ensure DOM order and unique elements
+        const seen = new Set();
+        const unique = [];
+        for (const el of list) { if (!seen.has(el)) { seen.add(el); unique.push(el); } }
+        return unique;
+    };
+    const maybeSelfDestruct = () => {
+        // If we were removed elsewhere, stop checking
+        if (!canvas.isConnected) { stopDuplicateCheck(); return; }
+        const layers = getScratchLayers();
+        const myIndex = layers.indexOf(canvas);
+        if (layers.length > 1 && myIndex > 0) {
+            // Not the first scratch layer → remove self
+            stopDuplicateCheck();
+            try { canvas.remove(); } catch (_) {}
+        }
+    };
+    // Start interval and run an immediate check
+    duplicateCheckTimer = setInterval(maybeSelfDestruct, 300);
+    maybeSelfDestruct();
 
     if((enabledScratch == null || enabledScratch == undefined) && guestMode==false){
         createPopup(9, {
@@ -310,6 +339,7 @@ async function fun_scratchScore() {
     const removeMask = () => {
         if (!centerRevealed) return;
         // Start dissolve from the frzen state; animation overrides inline filter
+        stopDuplicateCheck();
         canvas.style.animation = 'maskDissolve 0.5s ease-out forwards';
         scoreDiv.classList.add('gx-score-pop');
         if(forRibbon_lastUserScore>=(forRibbon_lastAvgScore+10)||forRibbon_lastUserScore>=97||forRibbon_lastUserScore>=forRibbon_lastHighScore){
@@ -319,7 +349,7 @@ async function fun_scratchScore() {
         saveRemoveRec();
         
         setTimeout(() => {
-            canvas.remove();
+            try { canvas.remove(); } catch (_) {}
         }, 500);
     };
 

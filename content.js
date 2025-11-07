@@ -19,13 +19,14 @@ function runWhenElementReady(selector, callback, interval, maxAttempts) {
 // 使用示例：每隔 500ms 检查一次目标元素，最多检查 10 次
 runWhenElementReady('link', diyHomepage, 10, 5);
 runWhenElementReady('link', diyHomepage, 100, 3);
-if(selectByPrefix===undefined){
+try {
     const selectByPrefix = (prefix, root = document) =>
         root.querySelector(`[class*="${prefix}"]`);
 
     const selectAllByPrefix = (prefix, root = document) =>
         root.querySelectorAll(`[class*="${prefix}"]`);
-}
+} catch (e) {}
+
 const byClassPrefix = (prefix) => `[class*="${prefix}"]`;
 
 const normalizeSelector = (selector) =>
@@ -1126,7 +1127,7 @@ function updateContent_DetailPage() {
     
     try {
         console.log("RUNNING updateDP")
-        const target = queryAllByClassNames('fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei')[1];
+        const target = queryAllByClassNames('fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei')[2];
         if(target.children[1].innerText=="1970-01-01 08:00"||target.children[1].innerText=="2008-10-16 00:00"){
             target.children[0].innerText=tlang("Giaoculator获取的数据","Giaoculator fetched data");
             
@@ -2148,7 +2149,7 @@ function showGPAcount(redotimes,data){
         }
         var tiptext;
         let className = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gradeName--2NKfjy7pw11NCA7ZnBb5Fs")[0].innerText;
-        let subjectName = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__basicInfoItemValue--3Zx2X_CcFbD3XBxLp_NeFt")[0].innerText;
+        let subjectName = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__basicInfoItemValue--3Zx2X_CcFbD3XBxLp_NeFt")[1].innerText;
         let totalInfo = className + subjectName;
         let excludeList_LowWeight = ["Fine Art","IT","Ele","Drama","Chinese Painting","Architectural","Dance","Percussion","Vocal","Media","Programming","Spanish","Philosophy","Skills","Journalism","Creative"];
         let excludeList_NotCNT = ["TSSA","IELTS","TOFEL","Student","Clubs","Homeroom"];
@@ -2167,7 +2168,7 @@ function showGPAcount(redotimes,data){
             tiptext=tlang("该科目与中文计为一科计算","This Subject counts together with Chinese Culture")
         }else if(totalInfo.includes("Chinese")&&!totalInfo.includes("Second")&&!totalInfo.includes("A Level")&&!totalInfo.includes("AP")){
             tiptext=tlang("该科目与中文人文计为一科计算","This Subject counts together with C-Humanities")
-        }else if(totalInfo.includes("AP")&&!totalInfo.includes("Second")){
+        }else if(totalInfo.includes("AP")&&!totalInfo.includes("Second")&&!totalInfo.includes("Pre ")){
             tiptext=tlang("该科目为AP科目，正常计入GPA计算","This Subject Weights 1 in GPA Calculation")
         }else{
             tiptext=tlang("该科目正常计入GPA计算","This Subject Weights 1 in GPA Calculation")
@@ -2243,7 +2244,7 @@ function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
     if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
         btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
     }
-    let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; padding: 0px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
+    let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; margin-top:11px; padding: 4px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
     
     
     document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
@@ -2295,10 +2296,10 @@ function appendAvgMaxScoresInPage(data,redotimes){
             let avgScoreModel;
             let hintText = "";
             let iconModel = "<img src="+chrome.runtime.getURL("res/icon.png")+" id='gcalc2ScoresIcon' alt='Ico' style='vertical-align: middle; margin-right: 5px; height: 24px;'>"
-                
+            //25.11.7请注意，由于这两个model无法从页面中找到最新class名，只能用固定的class。因此若页面再次更新，可能需要再次修改此处代码。
             if(ShowFull_state){
-                maxScoreModel = "<p ng-class='styles.itemClassInfoShow' ng-if='taskDetailInfo.displayClassAvgScore' class='ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP'>"+tlang("班级最高成绩:","Class Highest:")+maxS+"</p>"
-                avgScoreModel = "<p ng-class='styles.itemClassInfoShow' ng-if='taskDetailInfo.displayClassAvgScore' class='ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP'>"+tlang("班级平均成绩:","Class Average:")+avgS+"</p>"
+                maxScoreModel = "<p ng-class='styles.itemClassInfoShow' ng-if='taskDetailInfo.displayClassAvgScore' class='ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83'>"+tlang("班级最高成绩:","Class Highest:")+maxS+"</p>"
+                avgScoreModel = "<p ng-class='styles.itemClassInfoShow' ng-if='taskDetailInfo.displayClassAvgScore' class='ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83'>"+tlang("班级平均成绩:","Class Average:")+avgS+"</p>"
             }else{
                 maxScoreModel = ""
                 if (PercentageUsrS === PercentageMaxS) {
@@ -2453,6 +2454,30 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
         console.log("[ShowDiyScoresBox]Target Not Found");
         return;
     }
+    // Resolve latest hashed classes from tmp_target for stable rendering
+    function resolveHashedClass(prefix, root, fallback) {
+        try {
+            if (!prefix) return fallback || "";
+            const parts = prefix.trim().split(/\s+/);
+            const base = parts[parts.length - 1].replace(/--.*/, "");
+            if (root && root.classList) {
+                for (const cls of root.classList) {
+                    if (cls.startsWith(base + "--")) return cls;
+                }
+            }
+            const found = (typeof findHashedClass === "function") ? findHashedClass(parts.join(" "), root || document) : null;
+            return found || fallback || base;
+        } catch (e) {
+            return fallback || "";
+        }
+    }
+    const xbDialogModalCls = resolveHashedClass("fe-components-stu-app-realtime-list-__xbDialogModal", tmp_target, "fe-components-stu-app-realtime-list-__xbDialogModal--32pq02X2epeJa2CLnNeez5");
+    const xbDialogModalBoxCls = resolveHashedClass("fe-components-stu-app-realtime-list-__xbDialogModalBox", tmp_target, "fe-components-stu-app-realtime-list-__xbDialogModalBox--1hItMXot7XJyswrPjZ2WjQ");
+    const headerCls = resolveHashedClass("fe-components-stu-app-realtime-list-__header", tmp_target, "fe-components-stu-app-realtime-list-__header--2llDMOt0zjGNFxFvoV5VBp");
+    const clearFixCls = resolveHashedClass("fe-shared-css-__clearFix", tmp_target, "fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB");
+    const modelTitleCls = resolveHashedClass("fe-components-stu-app-realtime-list-__modelTitle", tmp_target, "fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i");
+    const closeIconCls = resolveHashedClass("fe-components-stu-app-realtime-list-__closeIcon", tmp_target, "fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv");
+    const bodyCls = resolveHashedClass("fe-components-stu-app-realtime-list-__body", tmp_target, "fe-components-stu-app-realtime-list-__body--KTwHV_4KFA0kqa0udu2GW");
     let selectionList = `<option value="none" disabled selected>${tlang("任务类别","Select Category")}</option>`;
     assignmentList.forEach(assignment => {
         selectionList += `
@@ -2461,13 +2486,13 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
             </option>
         `;
     });
-    mainHtml = `<div ng-class="styles.xbDialogModal" ng-if="$ctrl.showDialog" class="ng-scope fe-components-stu-app-realtime-list-__xbDialogModal--32pq02X2epeJa2CLnNeez5">
-    <div ng-class="styles.xbDialogModalBox" style="width:990px; max-height:680px"class="fe-components-stu-app-realtime-list-__xbDialogModalBox--1hItMXot7XJyswrPjZ2WjQ">
-        <div ng-class="[styles.header, commonStyles.clearFix]" class="fe-components-stu-app-realtime-list-__header--2llDMOt0zjGNFxFvoV5VBp fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB">
-            <span ng-class="styles.modelTitle" class="ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i">${tlang("预测成绩变化","Predict Score Changing")}</span>
-            <span ng-class="styles.closeIcon" ng-click="closeModal()" class="fe-components-stu-app-realtime-list-__closeIcon--21rEx3pvaQh2o8ssUTWfBv"></span>
+    mainHtml = `<div ng-class="styles.xbDialogModal" ng-if="$ctrl.showDialog" class="ng-scope ${xbDialogModalCls}">
+    <div ng-class="styles.xbDialogModalBox" style="width:990px; max-height:680px" class="${xbDialogModalBoxCls}">
+        <div ng-class="[styles.header, commonStyles.clearFix]" class="${headerCls} ${clearFixCls}">
+            <span ng-class="styles.modelTitle" class="ng-binding ${modelTitleCls}">${tlang("预测成绩变化","Predict Score Changing")}</span>
+            <span ng-class="styles.closeIcon" ng-click="closeModal()" class="${closeIconCls}"></span>
         </div>
-        <div id="gb-body" ng-class="styles.body" class="fe-components-stu-app-realtime-list-__body--KTwHV_4KFA0kqa0udu2GW">
+        <div id="gb-body" ng-class="styles.body" class="${bodyCls}">
             <br><br>
             <div style="margin-bottom: 20px;">
                 <p style="font-size: 14px; margin-right: 8px;">${tlang("学期ID","SemesterId")}：${smsId}&nbsp&nbsp&nbsp${tlang("&nbsp科目：","Subject:")}${subjectName} </p>
@@ -3590,18 +3615,18 @@ function scoreToLevel(score) {
 
 function showGPABox_BuildItem(subjectName,subjectWeight,gpa,noweight_gpa,btn,clickId){
     let mainHtml = `<li ng-repeat="items in $ctrl.evaluationProjectList" class="ng-scope">
-						<ul ng-class="commonStyles.clearFix" ng-click="toggleChildItem($index)" class="fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB">
-							<li ng-class="[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]" class="ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel--IDO2v_3UsPFqDDV9iQ2ml">
+						<ul ng-class="commonStyles.clearFix" ng-click="toggleChildItem($index)" class="fe-shared-css-__clearFix--2bBfLqA_aK4d2nGdPWfQp">
+							<li ng-class="[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]" class="ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel--QNy_JUewV_q9IbUjEwFt_">
 								${subjectName}
 							</li>
-							<li ng-class="[styles.scoreListItemWeight, styles.scoreListItemScoreWeight]" class="ng-binding fe-components-stu-app-realtime-list-__scoreListItemWeight--285HojRL7boCDLSqVG3jB-">
+							<li ng-class="[styles.scoreListItemWeight, styles.scoreListItemScoreWeight]" class="ng-binding fe-components-stu-app-realtime-list-__scoreListItemWeight--1ts22xvRGDfAVRWKPcE8lO">
 								${subjectWeight}
 							</li>
-							<li ng-class="[styles.scoreListItemScore, styles.scoreListItemScoreWeight]" class="fe-components-stu-app-realtime-list-__scoreListItemScore--1SnqOFUX5PHAR3L-RwXhkl">
+							<li ng-class="[styles.scoreListItemScore, styles.scoreListItemScoreWeight]" class="fe-components-stu-app-realtime-list-__scoreListItemScore--lkSMDUgc9xblZBcZfKry6">
 								<span class="ng-binding">${gpa} / ${noweight_gpa}</span>
 								<!-- ngIf: items.evaluationProjectList.length>0 && items.showChild -->
 								<!-- ngIf: items.evaluationProjectList.length>0 && !items.showChild -->
-								<!-- ngIf: items.evaluationProjectList.length==0&&items.learningTaskAndExamList.length --><a id="gpabox${clickId}" ng-click="$ctrl.checkProjectDetail(items)" ng-if="items.evaluationProjectList.length==0&amp;&amp;items.learningTaskAndExamList.length" ng-class="styles.projectDetail" class="ng-binding ng-scope fe-components-stu-app-realtime-list-__projectDetail--2eGVWnK9x_7T4bfK5HFNf2">${btn}</a><!-- end ngIf: items.evaluationProjectList.length==0&&items.learningTaskAndExamList.length -->
+								<!-- ngIf: items.evaluationProjectList.length==0&&items.learningTaskAndExamList.length --><a id="gpabox${clickId}" ng-click="$ctrl.checkProjectDetail(items)" ng-if="items.evaluationProjectList.length==0&amp;&amp;items.learningTaskAndExamList.length" ng-class="styles.projectDetail" class="ng-binding ng-scope fe-components-stu-app-realtime-list-__projectDetail--14CZMywvVSz8N3pzPn3gXq">${btn}</a><!-- end ngIf: items.evaluationProjectList.length==0&&items.learningTaskAndExamList.length -->
 							</li>
 						</ul>
 						<!-- ngRepeat: ele in items.evaluationProjectList -->
@@ -3687,8 +3712,8 @@ async function showGPABox(){
 
             queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[0].innerText=tlang("学科","Subject");
             queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB")[0].children[2].innerText=tlang("GPA / 未加权GPA","GPA / Unweighted GPA");
-            let sublineA = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[0];
-            let sublineB = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei")[1];
+            let sublineA = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--1GJykgXpYfsz2zE3hh9vsL")[0];
+            let sublineB = queryAllByClassNames("fe-components-stu-app-realtime-list-__basicInfoItem--1GJykgXpYfsz2zE3hh9vsL")[2];
             let bigScore = document.getElementsByClassName("ng-binding fe-components-stu-app-realtime-list-__score--3U_eJ7HbMjTKZkN2XLzX3S")[0];
 
             bigScore.innerText=schoolis_gpa?schoolis_gpa:gpa;
@@ -3902,7 +3927,7 @@ function insertCountdownBanner() {
 function showTeamsMainPannelBtn(){
     if(document.getElementById("gc_teamsMainBtn")) return;
     const btnHtml = `<span class="ng-scope fe-modules-task-__examTabItem--308Eb5U31Pt_Y24rocyVZU" id="gc_teamsMainBtn">
-        <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " class="fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf">
+        <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " class="${findHashedClass("fe-components-stu-common-stu-arc-button-__arcbtn")}">
     <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang(" Teams 面板","Teams Organizer")}</span>
 </button></stu-arc-button>
     </span>`;
