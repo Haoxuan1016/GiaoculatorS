@@ -1422,15 +1422,13 @@ chrome.webRequest.onBeforeRequest.addListener(
 
                 if (data.finishState === 1 && data.comment === "" && data.score === 0) {
                     // Fetch hidden score
-                    let hiddenScore = await C_getScoreForAssignment(
+                    C_getScoreForAssignment(
                         data.id,
                         data.classId,
                         data.subjectId,
                         data.schoolSemesterId
                     );
-
-                    hiddenScore = hiddenScore ?? -1; // 默认分数为 -1
-                    M_send_str_msg("appendHiddenScore", hiddenScore, 0);
+                    
                 }
 
                 // 构建分数数据并发送消息
@@ -1483,18 +1481,27 @@ async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId
             return;
         }
 
-        const tasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=${semesterRange.startDate}&endTime=${semesterRange.endDate}&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg`;
+        
+        const tasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=${semesterRange.startDate}&endTime=${semesterRange.endDate}&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg&gcalc=noRedirect`;
         const tasksResponse = await fetch(tasksURL);
         const tasksResult = await tasksResponse.json();
         const tasks = tasksResult?.data?.list || [];
+
+        const subjectResponse = await fetch(subjectURL);
+        const subjectData = await subjectResponse.json();
+        if(subjectData?.msg != null || subjectData?.data== null){
+            M_send_str_msg("appendHiddenScore", -1, 0);
+        }
+        M_send_str_msg("appendHiddenScore", 1, 0);
+
+        
 
         if (tasks.length === 0) {
             console.error("[HiddenScore] error: no tasks found for subject");
             return;
         }
 
-        const subjectResponse = await fetch(subjectURL);
-        const subjectData = await subjectResponse.json();
+        
         const categoryInfo = C_findEvaluationProject(subjectData?.data?.evaluationProjectList, targetCategoryId);
 
         if (!categoryInfo || typeof categoryInfo.score !== "number") {

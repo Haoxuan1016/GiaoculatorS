@@ -716,7 +716,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
             } else if (type == "tip_suc"){
                 sendSeccesstip(data.cont);
             } else if (type == "appendHiddenScore"){
-                showFetchedAssignmentData_toPage(data.cont);
+                showFetchedAssignmentData_toPage_Box(data.cont);
             } else if (type == "show_process"){
                 addCalcState(data,0);
                 console.log("REC:Showproges")
@@ -3519,23 +3519,52 @@ function showTeamsAssignmentsBox(){
 
 
 
+function showFetchedAssignmentData_toPage_Box(score,redotimes){
+    //显示box和按钮
+    try {
+            boxHtml = `<div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs">
+    <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
+    
+    <div style="display: flex; flex-direction: column; align-items: center;padding-top:10px" ng-if="taskDetailInfo.scoreType==1" class="ng-scope">
+        
+        <button style="max-width: 140px;padding: 5px 12px;font-size: 14px;color: #fff;background-color: #5B8AF9;border: 1px #5B8AF9 solid;border-radius: 3px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;">开始计算分数</button>
+        
+        <div ng-class="styles.itemClassInfo" style="display: flex; align-items: center; margin-top: 20px;">
+            <img src="chrome-extension://gohdhhoiemjlgioonlfhdihlncinnmjc/res/icon.png" id="gcalc2ScoresIcon" alt="Ico" style="height: 24px; margin-right: 5px;">
+            <p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83">Giaoculator 已获取分数</p>
+        </div>
+        
+    </div>
+</div>`;
+    queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0].parentElement.innerHTML = boxHtml;
+    } catch (error) {
+        setTimeout(() => {
+            if(redotimes<10){
+                showFetchedAssignmentData_toPage_Box(score,redotimes+1);
+            }
+            
+        }, redotimes*20);
+    }
+   }
+
+
 function showFetchedAssignmentData_toPage(score,redotimes){
-    //console.log("AppendHidden",score)
+    //最终分数
     try {
             boxHtml = `<div ng-if="taskDetailInfo.mode==0" class="ng-scope">
         <!-- 成绩信息 -->
-        <div id="middleItem" style="opacity: 1;" ng-class="styles.scoreInfo" ng-show="taskDetailInfo.isSynchroToMobiled" class="fe-components-stu-app-task-detail-__scoreInfo--34-hc2syVrNGe_yeBKsnL0">
-            <div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--1DW5FAgpA9y2Sgz8UxIRt8 fe-components-stu-app-task-detail-__allItem--a5TghcQ70cF8KuTHc_wWG">
-                <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--3aPG2yQzSZqW_YgP0JC9bO">任务成绩</p>
+        <div id="middleItem" style="opacity: 1;" ng-class="styles.scoreInfo" ng-show="taskDetailInfo.isSynchroToMobiled" class="fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy">
+            <div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs">
+                <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
                 
                 <!-- ngIf: taskDetailInfo.scoreType==1 --><div style="text-align: center" ng-if="taskDetailInfo.scoreType==1" class="ng-scope">
-                    <div ng-class="[styles.itemScore,taskDetailInfo.score!==null?'':styles.itemScoreNone]" class="ng-binding fe-components-stu-app-task-detail-__itemScore--1nuolF1pAilxxSB6o8b2Rx" style="text-shadow: rgb(187, 255, 187) 0px 0px 10px;">
+                    <div ng-class="[styles.itemScore,taskDetailInfo.score!==null?'':styles.itemScoreNone]" class="ng-binding fe-components-stu-app-task-detail-__itemScore--3kcWQccf5Vmk4IDUredeP4" style="text-shadow: rgb(187, 255, 187) 0px 0px 10px;">
                         ${score>-1?score:""}
                     </div>
-                    <div ng-class="styles.itemClassInfo" class="fe-components-stu-app-task-detail-__itemClassInfo--2Ist05O25K5lXA-9nAmiDO">
+                    <div ng-class="styles.itemClassInfo" class="">
                         <!-- ngIf: taskDetailInfo.displayClassAvgScore -->
                         <!-- ngIf: taskDetailInfo.displayClassMaxScore -->
-                    <img src="${chrome.runtime.getURL("res/icon.png")}" id="gcalc2ScoresIcon" alt="Ico" style="vertical-align: middle; margin-right: 5px; height: 24px;"><p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--359Ece2CkimkinYlmlxVbP">${score>-1?tlang("&nbsp;&nbsp;Giaoculator 已获取分数","&nbsp;&nbsp;Score Fetched from Server"):tlang("&nbsp;&nbsp;由于技术限制，该科目无法显示批改中成绩","&nbsp;&nbsp;Due to technical limitations, this function is currently unavailable for this subject.")}</p></div>
+                    <img src="${chrome.runtime.getURL("res/icon.png")}" id="gcalc2ScoresIcon" alt="Ico" style="vertical-align: middle; margin-right: 5px; height: 24px;"><p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83">${score>-1?tlang("&nbsp;&nbsp;Giaoculator 已获取分数","&nbsp;&nbsp;Score Fetched from Server"):tlang("&nbsp;&nbsp;由于技术限制，该科目无法显示批改中成绩","&nbsp;&nbsp;Due to technical limitations, this function is currently unavailable for this subject.")}</p></div>
                 </div><!-- end ngIf: taskDetailInfo.scoreType==1 -->
                 <!-- 手动等级 -->
                 <!-- ngIf: taskDetailInfo.scoreType==2 -->
@@ -3544,7 +3573,7 @@ function showFetchedAssignmentData_toPage(score,redotimes){
         <!-- 教师点评 -->
         <!-- ngIf: taskDetailInfo.comment||(teacherCommentDocuments1.length !=0||teacherCommentDocuments2.length != 0) -->
     </div>`;
-    queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--34-hc2syVrNGe_yeBKsnL0")[0].parentElement.innerHTML = boxHtml;
+    queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0].parentElement.innerHTML = boxHtml;
     } catch (error) {
         setTimeout(() => {
             if(redotimes<10){
