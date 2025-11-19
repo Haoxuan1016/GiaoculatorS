@@ -241,7 +241,7 @@ async function InitGCalc() {
 
 }
 
-async function C_CalcAll(M_UserSettings){
+async function C_CalcAll(M_UserSettings){ 
     
     const calcRange = M_UserSettings.calcRange;
     if(calcRange===0){
@@ -1381,6 +1381,9 @@ function M_clearRedirectRules() {
         }
     });
 }
+
+
+
 chrome.webRequest.onBeforeRequest.addListener(
     async (details) => {
         const assignmentInfoPattern = "schoolis.cn/api/LearningTask/GetDetail?learningTaskId=";
@@ -1453,7 +1456,38 @@ function delay(ms) {
 }
 
 
+function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId) {
+    const SubjectURL = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
+    
+    const TasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=2025-06-21&endTime=2026-02-20&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg`;
+    
+    const LearningTaskURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${learningTaskId}&gcalc=gcalc_bg`;
+
+    1:使用LearningTaskURL获取目标Task的category
+    2:使用TaskURL(你需要先调用GerSemesterDateInfo补全BgnDate和EndDate)获取该科目下所有的Task
+    for each task in tasks:
+        Use LerningTaskURL for each Task's task id, such as const LearningTaskURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${THE ID}&gcalc=gcalc_bg`;
+        And get the category of each task
+        if category matches the target task's category:
+            accumulate score and total score for the whole category
+    3: use subjectURL to get the AVGscore for the category, and times it by tasknumber in the category to find the total score for that category
+    4: Use formula TotalScore - AccumulatedScore = the hidden score for the target
+
+    note:
+    1:You have to fetch the detail for each Task, because the category info is not included in the Task list API
+    2:You only have to consider the category where the TargetTask is in
+    3:In the TasksURL:If a task is with finishState of null, means that the task is not submitted yet, skip it
+    4:In the TasksURL:If a task is with finishState of 1 but the syncTime": "0001-01-01T00:00:00", means that it is also a hidden task, in this case, if 2 hidden tasks are in the same category, we cannot get the score for the targetHiddenTask, return Error
+
+
+    console.log(url);
+    fetch(url)
+        .then(response => response.json())
+}
+
 async function C_getScoreForAssignment(learningTaskId, classId, subjectId, semesterId) {
+    C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId);
+    return;//25.11.19 旧版隐藏分数获取方法，由于教务修改接口已失效，暂时禁用此功能
     const url = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
 
     console.log(url);
