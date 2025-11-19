@@ -263,6 +263,7 @@ async function C_CalcAll(M_UserSettings){
             console.log("[AutoCalc] Invalid Semester ID, skipping...");
         }
     }
+    
 
     //finished Calcall
 
