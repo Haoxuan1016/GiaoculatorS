@@ -1457,37 +1457,159 @@ function delay(ms) {
 }
 
 
-function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId) {
-    const SubjectURL = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
-    
-    const TasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=2025-06-21&endTime=2026-02-20&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg`;
-    
-    const LearningTaskURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${learningTaskId}&gcalc=gcalc_bg`;
+async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId) {
+    try {
+        const subjectURL = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
+        const targetLearningTaskURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${learningTaskId}&gcalc=gcalc_bg`;
 
-    1:使用LearningTaskURL获取目标Task的category
-    2:使用TaskURL(你需要先调用GerSemesterDateInfo补全BgnDate和EndDate)获取该科目下所有的Task
-    for each task in tasks:
-        Use LerningTaskURL for each Task's task id, such as const LearningTaskURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${THE ID}&gcalc=gcalc_bg`;
-        And get the category of each task
-        if category matches the target task's category:
-            accumulate score and total score for the whole category
-    3: use subjectURL to get the AVGscore for the category, and times it by tasknumber in the category to find the total score for that category
-    4: Use formula TotalScore - AccumulatedScore = the hidden score for the target
+        const targetDetailResponse = await fetch(targetLearningTaskURL);
+        const targetDetail = await targetDetailResponse.json();
+        const targetTaskData = targetDetail?.data;
+        if (!targetTaskData || !Array.isArray(targetTaskData.evaProjects) || targetTaskData.evaProjects.length === 0) {
+            console.error("[HiddenScore] error: unable to fetch target task category");
+            return;
+        }
 
-    note:
-    1:You have to fetch the detail for each Task, because the category info is not included in the Task list API
-    2:You only have to consider the category where the TargetTask is in
-    3:In the TasksURL:If a task is with finishState of null, means that the task is not submitted yet, skip it
-    4:In the TasksURL:If a task is with finishState of 1 but the syncTime": "0001-01-01T00:00:00", means that it is also a hidden task, in this case, if 2 hidden tasks are in the same category, we cannot get the score for the targetHiddenTask, return Error
+        const targetCategory = targetTaskData.evaProjects.find(project => project && project.id);
+        const targetCategoryId = targetCategory.id;
+        if (!targetCategoryId) {
+            console.error("[HiddenScore] error: invalid target category");
+            return;
+        }
 
+        const semesterRange = await C_getSemesterDateInfo(semesterId);
+        if (!semesterRange || !semesterRange.startDate || !semesterRange.endDate) {
+            console.error("[HiddenScore] error: unable to fetch semester date range");
+            return;
+        }
 
-    console.log(url);
-    fetch(url)
-        .then(response => response.json())
+        const tasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=${semesterRange.startDate}&endTime=${semesterRange.endDate}&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg`;
+        const tasksResponse = await fetch(tasksURL);
+        const tasksResult = await tasksResponse.json();
+        const tasks = tasksResult?.data?.list || [];
+
+        if (tasks.length === 0) {
+            console.error("[HiddenScore] error: no tasks found for subject");
+            return;
+        }
+
+        const subjectResponse = await fetch(subjectURL);
+        const subjectData = await subjectResponse.json();
+        const categoryInfo = C_findEvaluationProject(subjectData?.data?.evaluationProjectList, targetCategoryId);
+
+        if (!categoryInfo || typeof categoryInfo.score !== "number") {
+            console.error("[HiddenScore] error: unable to fetch subject category score");
+            return;
+        }
+
+        let categoryTaskCount = 0;
+        let knownScoreSum = 0;
+        let otherHiddenCount = 0;
+
+        for (const task of tasks) {
+            if (task.finishState === null) {
+                continue;
+            }
+
+            const taskDetailUrl = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${task.id}&gcalc=gcalc_bg`;
+            const taskDetailResponse = await fetch(taskDetailUrl);
+            const taskDetail = await taskDetailResponse.json();
+            const taskData = taskDetail?.data;
+
+            if (!taskData || !Array.isArray(taskData.evaProjects)) {
+                continue;
+            }
+
+            const belongsToTargetCategory = taskData.evaProjects.some(project => project.id === targetCategoryId);
+            if (!belongsToTargetCategory) {
+                continue;
+            }
+
+            categoryTaskCount++;
+            const isHiddenTask = task.finishState === 1 && task.syncTime === "0001-01-01T00:00:00";
+
+            if (isHiddenTask && task.id !== learningTaskId) {
+                otherHiddenCount++;
+                continue;
+            }
+
+            if (!isHiddenTask) {
+                const scoreValue = typeof taskData.score === "number" ? taskData.score : task.score;
+                if (typeof scoreValue === "number") {
+                    knownScoreSum += scoreValue;
+                }
+            }
+        }
+
+        if (otherHiddenCount > 0) {
+            console.error("[HiddenScore] error: multiple hidden tasks detected in category");
+            return;
+        }
+
+        if (categoryTaskCount === 0) {
+            console.error("[HiddenScore] error: no tasks found in the same category");
+            return;
+        }
+
+        const totalCategoryScore = categoryInfo.score * categoryTaskCount;
+        const hiddenScore = totalCategoryScore - knownScoreSum;
+
+        if (Number.isFinite(hiddenScore)) {
+            console.log("[HiddenScore]", hiddenScore);
+        } else {
+            console.error("[HiddenScore] error: failed to calculate hidden score");
+        }
+    } catch (error) {
+        console.error("[HiddenScore] error:", error);
+    }
+}
+
+async function C_getSemesterDateInfo(semesterId) {
+    try {
+        const response = await fetch("https://tsinglanstudent.schoolis.cn/api/School/GetSchoolSemesters");
+        const data = await response.json();
+        const semester = data?.data?.find(item => item.id === semesterId);
+        if (!semester) {
+            return null;
+        }
+
+        const normalizeDate = (value) => {
+            if (!value) return null;
+            return value.includes("T") ? value.split("T")[0] : value;
+        };
+
+        return {
+            startDate: normalizeDate(semester.startDate),
+            endDate: normalizeDate(semester.endDate),
+        };
+    } catch (error) {
+        console.error("[HiddenScore] error: unable to fetch semester info", error);
+        return null;
+    }
+}
+
+function C_findEvaluationProject(projects, targetId) {
+    if (!Array.isArray(projects)) {
+        return null;
+    }
+
+    for (const project of projects) {
+        const projectId = project.evaluationProjectId ?? project.id;
+        if (Number(projectId) === Number(targetId)) {
+            return project;
+        }
+
+        const childResult = C_findEvaluationProject(project.evaluationProjectList, targetId);
+        if (childResult) {
+            return childResult;
+        }
+    }
+
+    return null;
 }
 
 async function C_getScoreForAssignment(learningTaskId, classId, subjectId, semesterId) {
-    C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId);
+    await C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId);
     return;//25.11.19 旧版隐藏分数获取方法，由于教务修改接口已失效，暂时禁用此功能
     const url = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
 
