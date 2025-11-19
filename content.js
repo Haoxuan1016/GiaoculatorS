@@ -1124,7 +1124,7 @@ function englishToChiSemester(englishSemester) {
 }
 
 function updateContent_DetailPage() {
-
+    
     try {
         console.log("RUNNING updateDP")
         const target = queryAllByClassNames('fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei')[2];
@@ -1140,11 +1140,10 @@ function updateContent_DetailPage() {
 
         engPage_opti(0);
         setTimeout(engPage_opti(0), 30);
-        ensureHiddenScoreBoxSkeleton();
     } catch (e) {
-
+        
     }
-
+    
 }
 
 function engPage_opti(redotimes){
@@ -3528,8 +3527,7 @@ function handleHiddenScoreMessage(payload){
         }
 
         if (payload.state === "done") {
-            const parsedScore = Number(payload.score);
-            const score = Number.isFinite(parsedScore) ? parsedScore : -1;
+            const score = typeof payload.score === "number" ? payload.score : -1;
             showFetchedAssignmentData_toPage(score,0);
             return;
         }
@@ -3550,31 +3548,28 @@ function showFetchedAssignmentData_toPage_Box(payload, redotimes = 0){
     ensureHiddenScoreStyles();
     try {
         const assignment = payload?.assignment || {};
-        const iconUrl = chrome.runtime.getURL("res/icon.png");
-        const state = payload?.state || "ready";
-        const isLoading = state === "loading";
-        const canStart = Boolean(assignment.learningTaskId) && !isLoading;
-        const buttonLabel = payload?.buttonLabel || (isLoading ? tlang("准备中...","Preparing...") : tlang("开始计算分数","Start Calculation"));
-        const helperText = payload?.message || (isLoading ? tlang("Giaoculator 正在检测是否可以获取隐藏成绩","Giaoculator is checking whether this hidden score can be calculated") : tlang("Giaoculator 可尝试获取隐藏成绩","Giaoculator can attempt to fetch this hidden score"));
+        const canStart = Boolean(assignment.learningTaskId);
+        const buttonText = payload?.buttonLabel || tlang("开始计算分数","Start Calculation");
+        const helperText = payload?.message || tlang("Giaoculator 可尝试获取隐藏成绩","Giaoculator can attempt to fetch this hidden score");
         const cursorStyle = canStart ? "pointer" : "not-allowed";
         const disabledAttr = canStart ? "" : "disabled";
-        const buttonInner = isLoading ? `<span class="gcalc-hiddenScoreSpinner"></span>${buttonLabel}` : buttonLabel;
-        const buttonClasses = `gcalc-hiddenScoreBtn${isLoading ? " gcalc-hiddenScoreBtn--loading" : ""}`;
-        const sectionStateClass = isLoading ? "gcalc-hiddenScoreSection--loading" : "gcalc-hiddenScoreSection--ready";
 
-        const boxHtml = `<div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs gcalc-hiddenScoreSection ${sectionStateClass}">
+        const iconUrl = chrome.runtime.getURL("res/icon.png");
+
+        const boxHtml = `<div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs">
     <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
 
     <div style="display: flex; flex-direction: column; align-items: center;padding-top:10px" ng-if="taskDetailInfo.scoreType==1" class="ng-scope">
 
-        <button id="gcalc_hiddenScoreStartBtn" class="${buttonClasses}" ${disabledAttr} style="max-width: 180px;padding: 6px 18px;font-size: 14px;color: #fff;background-color: #5B8AF9;border: 1px #5B8AF9 solid;border-radius: 4px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;cursor:${cursorStyle};">
-            ${buttonInner}
+        <button id="gcalc_hiddenScoreStartBtn" class="gcalc-hiddenScoreBtn" ${disabledAttr} style="max-width: 180px;padding: 6px 18px;font-size: 14px;color: #fff;background-color: #5B8AF9;border: 1px #5B8AF9 solid;border-radius: 4px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;cursor:${cursorStyle};">
+            ${buttonText}
         </button>
 
         <div ng-class="styles.itemClassInfo" style="display: flex; align-items: center; margin-top: 20px;">
             <img src="${iconUrl}" id="gcalc2ScoresIcon" alt="Ico" style="height: 24px; margin-right: 5px;">
-            <p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83 gcalc-hiddenScoreHelper">${helperText}</p>
+            <p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83">${helperText}</p>
         </div>
+
     </div>
 </div>`;
         queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0].parentElement.innerHTML = boxHtml;
@@ -3615,7 +3610,7 @@ function showFetchedAssignmentData_toPage(score, redotimes = 0){
             const displayScore = typeof score === "number" && score > -1 ? score : "";
             const boxHtml = `<div ng-if="taskDetailInfo.mode==0" class="ng-scope">
         <!-- 成绩信息 -->
-        <div id="middleItem" style="opacity: 1;" ng-class="styles.scoreInfo" ng-show="taskDetailInfo.isSynchroToMobiled" class="fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy gcalc-hiddenScoreResult gcalc-hiddenScoreSection">
+        <div id="middleItem" style="opacity: 1;" ng-class="styles.scoreInfo" ng-show="taskDetailInfo.isSynchroToMobiled" class="fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy gcalc-hiddenScoreResult">
             <div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs">
                 <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
 
@@ -3656,19 +3651,6 @@ function ensureHiddenScoreStyles(){
     const style = document.createElement("style");
     style.id = "gcalc-hiddenScore-style";
     style.textContent = `
-        .gcalc-hiddenScoreSection {
-            animation: gcalc-hiddenScore-fadeIn .45s ease;
-        }
-        .gcalc-hiddenScoreSection--loading .gcalc-hiddenScoreHelper {
-            color: #5B8AF9 !important;
-        }
-        .gcalc-hiddenScoreHelper {
-            margin-top: 16px;
-            font-size: 12px;
-            color: #5b5c61;
-            text-align: center;
-            line-height: 1.4;
-        }
         .gcalc-hiddenScoreBtn {
             position: relative;
             overflow: hidden;
@@ -3689,6 +3671,9 @@ function ensureHiddenScoreStyles(){
             animation: gcalc-hiddenScore-spin 0.9s linear infinite;
             vertical-align: middle;
         }
+        .gcalc-hiddenScoreResult {
+            animation: gcalc-hiddenScore-fadeIn .45s ease;
+        }
         @keyframes gcalc-hiddenScore-spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -3699,19 +3684,6 @@ function ensureHiddenScoreStyles(){
         }
     `;
     document.head.appendChild(style);
-}
-
-function ensureHiddenScoreBoxSkeleton(redotimes = 0) {
-    try {
-        if (document.querySelector(".gcalc-hiddenScoreResult") || document.getElementById("gcalc_hiddenScoreStartBtn")) {
-            return;
-        }
-        showFetchedAssignmentData_toPage_Box({ state: "loading" }, redotimes);
-    } catch (error) {
-        if (redotimes < 5) {
-            setTimeout(() => ensureHiddenScoreBoxSkeleton(redotimes + 1), 20 * (redotimes + 1));
-        }
-    }
 }
 
 
