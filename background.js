@@ -1454,6 +1454,16 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const hiddenScoreSessions = new Map();
+
+function clearHiddenScoreSession(learningTaskId) {
+    if (!learningTaskId) {
+        return;
+    }
+
+    hiddenScoreSessions.delete(learningTaskId);
+}
+
 
 async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId, semesterId) {
     try {
@@ -1465,6 +1475,7 @@ async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId
         const targetTaskData = targetDetail?.data;
         if (!targetTaskData || !Array.isArray(targetTaskData.evaProjects) || targetTaskData.evaProjects.length === 0) {
             console.error("[HiddenScore] error: unable to fetch target task category");
+            M_send_str_msg("appendHiddenScore", -1, 0);
             return;
         }
 
@@ -1472,16 +1483,17 @@ async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId
         const targetCategoryId = targetCategory.id;
         if (!targetCategoryId) {
             console.error("[HiddenScore] error: invalid target category");
+            M_send_str_msg("appendHiddenScore", -1, 0);
             return;
         }
 
         const semesterRange = await C_getSemesterDateInfo(semesterId);
         if (!semesterRange || !semesterRange.startDate || !semesterRange.endDate) {
             console.error("[HiddenScore] error: unable to fetch semester date range");
+            M_send_str_msg("appendHiddenScore", -1, 0);
             return;
         }
 
-        
         const tasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=${semesterRange.startDate}&endTime=${semesterRange.endDate}&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg&gcalc=noRedirect`;
         const tasksResponse = await fetch(tasksURL);
         const tasksResult = await tasksResponse.json();
@@ -1489,31 +1501,74 @@ async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId
 
         const subjectResponse = await fetch(subjectURL);
         const subjectData = await subjectResponse.json();
-        if(subjectData?.msg != null || subjectData?.data== null){
+        if (subjectData?.msg != null || subjectData?.data == null) {
             M_send_str_msg("appendHiddenScore", -1, 0);
-        }
-        M_send_str_msg("appendHiddenScore", 1, 0);
-
-        
-
-        if (tasks.length === 0) {
-            console.error("[HiddenScore] error: no tasks found for subject");
             return;
         }
 
-        
+        if (tasks.length === 0) {
+            console.error("[HiddenScore] error: no tasks found for subject");
+            M_send_str_msg("appendHiddenScore", -1, 0);
+            return;
+        }
+
         const categoryInfo = C_findEvaluationProject(subjectData?.data?.evaluationProjectList, targetCategoryId);
 
         if (!categoryInfo || typeof categoryInfo.score !== "number") {
             console.error("[HiddenScore] error: unable to fetch subject category score");
+            M_send_str_msg("appendHiddenScore", -1, 0);
             return;
         }
 
+        hiddenScoreSessions.set(learningTaskId, {
+            learningTaskId,
+            classId,
+            subjectId,
+            semesterId,
+            targetCategoryId,
+            categoryScore: categoryInfo.score,
+            tasks,
+            isCalculating: false,
+        });
+
+        M_send_str_msg("appendHiddenScore", {
+            state: "ready",
+            assignment: {
+                learningTaskId,
+                classId,
+                subjectId,
+                semesterId,
+            },
+        }, 0);
+    } catch (error) {
+        console.error("[HiddenScore] error:", error);
+        M_send_str_msg("appendHiddenScore", -1, 0);
+        clearHiddenScoreSession(learningTaskId);
+    }
+}
+
+async function C_continueHiddenScoreCalculation(learningTaskId) {
+    const session = hiddenScoreSessions.get(learningTaskId);
+
+    if (!session) {
+        console.error("[HiddenScore] error: session not found for", learningTaskId);
+        M_send_str_msg("appendHiddenScore", -1, 0);
+        return;
+    }
+
+    if (session.isCalculating) {
+        return;
+    }
+
+    session.isCalculating = true;
+    hiddenScoreSessions.set(learningTaskId, session);
+
+    try {
         let categoryTaskCount = 0;
         let knownScoreSum = 0;
         let otherHiddenCount = 0;
 
-        for (const task of tasks) {
+        for (const task of session.tasks) {
             if (task.finishState === null) {
                 continue;
             }
@@ -1527,7 +1582,7 @@ async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId
                 continue;
             }
 
-            const belongsToTargetCategory = taskData.evaProjects.some(project => project.id === targetCategoryId);
+            const belongsToTargetCategory = taskData.evaProjects.some(project => project.id === session.targetCategoryId);
             if (!belongsToTargetCategory) {
                 continue;
             }
@@ -1550,24 +1605,33 @@ async function C_calcScoreForHiddenAssignment(learningTaskId, classId, subjectId
 
         if (otherHiddenCount > 0) {
             console.error("[HiddenScore] error: multiple hidden tasks detected in category");
+            M_send_str_msg("appendHiddenScore", -1, 0);
+            clearHiddenScoreSession(learningTaskId);
             return;
         }
 
         if (categoryTaskCount === 0) {
             console.error("[HiddenScore] error: no tasks found in the same category");
+            M_send_str_msg("appendHiddenScore", -1, 0);
+            clearHiddenScoreSession(learningTaskId);
             return;
         }
 
-        const totalCategoryScore = categoryInfo.score * categoryTaskCount;
+        const totalCategoryScore = session.categoryScore * categoryTaskCount;
         const hiddenScore = totalCategoryScore - knownScoreSum;
 
         if (Number.isFinite(hiddenScore)) {
             console.log("[HiddenScore]", hiddenScore);
+            M_send_str_msg("appendHiddenScore", { state: "done", score: hiddenScore }, 0);
         } else {
             console.error("[HiddenScore] error: failed to calculate hidden score");
+            M_send_str_msg("appendHiddenScore", -1, 0);
         }
     } catch (error) {
-        console.error("[HiddenScore] error:", error);
+        console.error("[HiddenScore] error during calculation:", error);
+        M_send_str_msg("appendHiddenScore", -1, 0);
+    } finally {
+        clearHiddenScoreSession(learningTaskId);
     }
 }
 
@@ -1729,6 +1793,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             break;
         case "StartMSFeature":
              M_StartMSFeatures(message.xbAccount);
+            break;
+        case "startHiddenScoreCalc":
+            {
+                const taskId = message.learningTaskId || message.assignment?.learningTaskId;
+                if (taskId) {
+                    C_continueHiddenScoreCalculation(taskId);
+                }
+            }
             break;
     }
 

@@ -716,7 +716,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
             } else if (type == "tip_suc"){
                 sendSeccesstip(data.cont);
             } else if (type == "appendHiddenScore"){
-                showFetchedAssignmentData_toPage_Box(data.cont);
+                handleHiddenScoreMessage(data.cont);
             } else if (type == "show_process"){
                 addCalcState(data,0);
                 console.log("REC:Showproges")
@@ -1124,7 +1124,7 @@ function englishToChiSemester(englishSemester) {
 }
 
 function updateContent_DetailPage() {
-    
+
     try {
         console.log("RUNNING updateDP")
         const target = queryAllByClassNames('fe-components-stu-app-realtime-list-__basicInfoItem--2mLNqht5xhMaGuOPL1rAei')[2];
@@ -1140,10 +1140,11 @@ function updateContent_DetailPage() {
 
         engPage_opti(0);
         setTimeout(engPage_opti(0), 30);
+        ensureHiddenScoreBoxSkeleton();
     } catch (e) {
-        
+
     }
-    
+
 }
 
 function engPage_opti(redotimes){
@@ -3519,47 +3520,108 @@ function showTeamsAssignmentsBox(){
 
 
 
-function showFetchedAssignmentData_toPage_Box(score,redotimes){
-    //显示box和按钮
+function handleHiddenScoreMessage(payload){
+    if (payload && typeof payload === "object") {
+        if (payload.state === "ready") {
+            showFetchedAssignmentData_toPage_Box(payload,0);
+            return;
+        }
+
+        if (payload.state === "done") {
+            const parsedScore = Number(payload.score);
+            const score = Number.isFinite(parsedScore) ? parsedScore : -1;
+            showFetchedAssignmentData_toPage(score,0);
+            return;
+        }
+
+        if (payload.state === "error") {
+            showFetchedAssignmentData_toPage(-1,0);
+            return;
+        }
+    }
+
+    if (typeof payload === "number") {
+        showFetchedAssignmentData_toPage(payload,0);
+    }
+}
+
+
+function showFetchedAssignmentData_toPage_Box(payload, redotimes = 0){
+    ensureHiddenScoreStyles();
     try {
-            boxHtml = `<div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs">
+        const assignment = payload?.assignment || {};
+        const iconUrl = chrome.runtime.getURL("res/icon.png");
+        const state = payload?.state || "ready";
+        const isLoading = state === "loading";
+        const canStart = Boolean(assignment.learningTaskId) && !isLoading;
+        const buttonLabel = payload?.buttonLabel || (isLoading ? tlang("准备中...","Preparing...") : tlang("开始计算分数","Start Calculation"));
+        const helperText = payload?.message || (isLoading ? tlang("Giaoculator 正在检测是否可以获取隐藏成绩","Giaoculator is checking whether this hidden score can be calculated") : tlang("Giaoculator 可尝试获取隐藏成绩","Giaoculator can attempt to fetch this hidden score"));
+        const cursorStyle = canStart ? "pointer" : "not-allowed";
+        const disabledAttr = canStart ? "" : "disabled";
+        const buttonInner = isLoading ? `<span class="gcalc-hiddenScoreSpinner"></span>${buttonLabel}` : buttonLabel;
+        const buttonClasses = `gcalc-hiddenScoreBtn${isLoading ? " gcalc-hiddenScoreBtn--loading" : ""}`;
+        const sectionStateClass = isLoading ? "gcalc-hiddenScoreSection--loading" : "gcalc-hiddenScoreSection--ready";
+
+        const boxHtml = `<div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs gcalc-hiddenScoreSection ${sectionStateClass}">
     <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
-    
+
     <div style="display: flex; flex-direction: column; align-items: center;padding-top:10px" ng-if="taskDetailInfo.scoreType==1" class="ng-scope">
-        
-        <button style="max-width: 140px;padding: 5px 12px;font-size: 14px;color: #fff;background-color: #5B8AF9;border: 1px #5B8AF9 solid;border-radius: 3px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;">开始计算分数</button>
-        
+
+        <button id="gcalc_hiddenScoreStartBtn" class="${buttonClasses}" ${disabledAttr} style="max-width: 180px;padding: 6px 18px;font-size: 14px;color: #fff;background-color: #5B8AF9;border: 1px #5B8AF9 solid;border-radius: 4px;overflow: hidden;text-overflow: ellipsis;white-space: nowrap;cursor:${cursorStyle};">
+            ${buttonInner}
+        </button>
+
         <div ng-class="styles.itemClassInfo" style="display: flex; align-items: center; margin-top: 20px;">
-            <img src="chrome-extension://gohdhhoiemjlgioonlfhdihlncinnmjc/res/icon.png" id="gcalc2ScoresIcon" alt="Ico" style="height: 24px; margin-right: 5px;">
-            <p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83">Giaoculator 已获取分数</p>
+            <img src="${iconUrl}" id="gcalc2ScoresIcon" alt="Ico" style="height: 24px; margin-right: 5px;">
+            <p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83 gcalc-hiddenScoreHelper">${helperText}</p>
         </div>
-        
     </div>
 </div>`;
-    queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0].parentElement.innerHTML = boxHtml;
+        queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0].parentElement.innerHTML = boxHtml;
+
+        const startBtn = document.getElementById("gcalc_hiddenScoreStartBtn");
+        if (startBtn && canStart) {
+            startBtn.addEventListener('click', () => {
+                if (startBtn.dataset.loading === "1") {
+                    return;
+                }
+                startBtn.dataset.loading = "1";
+                startBtn.disabled = true;
+                startBtn.classList.add("gcalc-hiddenScoreBtn--loading");
+                startBtn.innerHTML = `<span class="gcalc-hiddenScoreSpinner"></span>${tlang("计算中...","Calculating...")}`;
+
+                chrome.runtime.sendMessage({
+                    type: "startHiddenScoreCalc",
+                    learningTaskId: assignment.learningTaskId,
+                    assignment
+                });
+            });
+        }
     } catch (error) {
         setTimeout(() => {
-            if(redotimes<10){
-                showFetchedAssignmentData_toPage_Box(score,redotimes+1);
+            if (redotimes < 10) {
+                showFetchedAssignmentData_toPage_Box(payload, redotimes + 1);
             }
-            
-        }, redotimes*20);
+
+        }, redotimes * 20);
     }
-   }
+}
 
 
-function showFetchedAssignmentData_toPage(score,redotimes){
+function showFetchedAssignmentData_toPage(score, redotimes = 0){
     //最终分数
+    ensureHiddenScoreStyles();
     try {
-            boxHtml = `<div ng-if="taskDetailInfo.mode==0" class="ng-scope">
+            const displayScore = typeof score === "number" && score > -1 ? score : "";
+            const boxHtml = `<div ng-if="taskDetailInfo.mode==0" class="ng-scope">
         <!-- 成绩信息 -->
-        <div id="middleItem" style="opacity: 1;" ng-class="styles.scoreInfo" ng-show="taskDetailInfo.isSynchroToMobiled" class="fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy">
+        <div id="middleItem" style="opacity: 1;" ng-class="styles.scoreInfo" ng-show="taskDetailInfo.isSynchroToMobiled" class="fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy gcalc-hiddenScoreResult gcalc-hiddenScoreSection">
             <div ng-class="[styles.middleItem,styles.allItem]" class="fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs">
                 <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
-                
+
                 <!-- ngIf: taskDetailInfo.scoreType==1 --><div style="text-align: center" ng-if="taskDetailInfo.scoreType==1" class="ng-scope">
                     <div ng-class="[styles.itemScore,taskDetailInfo.score!==null?'':styles.itemScoreNone]" class="ng-binding fe-components-stu-app-task-detail-__itemScore--3kcWQccf5Vmk4IDUredeP4" style="text-shadow: rgb(187, 255, 187) 0px 0px 10px;">
-                        ${score>-1?score:""}
+                        ${displayScore}
                     </div>
                     <div ng-class="styles.itemClassInfo" class="">
                         <!-- ngIf: taskDetailInfo.displayClassAvgScore -->
@@ -3579,10 +3641,79 @@ function showFetchedAssignmentData_toPage(score,redotimes){
             if(redotimes<10){
                 showFetchedAssignmentData_toPage(score,redotimes+1);
             }
-            
+
         }, redotimes*20);
     }
    }
+
+
+
+function ensureHiddenScoreStyles(){
+    if (document.getElementById("gcalc-hiddenScore-style")) {
+        return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "gcalc-hiddenScore-style";
+    style.textContent = `
+        .gcalc-hiddenScoreSection {
+            animation: gcalc-hiddenScore-fadeIn .45s ease;
+        }
+        .gcalc-hiddenScoreSection--loading .gcalc-hiddenScoreHelper {
+            color: #5B8AF9 !important;
+        }
+        .gcalc-hiddenScoreHelper {
+            margin-top: 16px;
+            font-size: 12px;
+            color: #5b5c61;
+            text-align: center;
+            line-height: 1.4;
+        }
+        .gcalc-hiddenScoreBtn {
+            position: relative;
+            overflow: hidden;
+            transition: background-color .2s ease, opacity .2s ease;
+        }
+        .gcalc-hiddenScoreBtn--loading {
+            opacity: .85;
+            padding-left: 32px !important;
+        }
+        .gcalc-hiddenScoreSpinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.6);
+            border-top-color: #fff;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: gcalc-hiddenScore-spin 0.9s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes gcalc-hiddenScore-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes gcalc-hiddenScore-fadeIn {
+            0% { opacity: 0; transform: translateY(6px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function ensureHiddenScoreBoxSkeleton(redotimes = 0) {
+    try {
+        if (document.querySelector(".gcalc-hiddenScoreResult") || document.getElementById("gcalc_hiddenScoreStartBtn")) {
+            return;
+        }
+        showFetchedAssignmentData_toPage_Box({ state: "loading" }, redotimes);
+    } catch (error) {
+        if (redotimes < 5) {
+            setTimeout(() => ensureHiddenScoreBoxSkeleton(redotimes + 1), 20 * (redotimes + 1));
+        }
+    }
+}
+
 
 function observeUrlChange(callbacks) {
     let currentUrl = window.location.href;
