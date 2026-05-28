@@ -22,7 +22,7 @@
                         if(update.length>10){
                             M_send_str_msg("tip_update",update,0);
                             saveToChromeStorage("updateMsg", "");
-                            M_send_str_msg("rib_fwk", 0.5, 0);
+                            //M_send_str_msg("rib_fwk", 0.5, 0); 这个版本不需要
                         }
                         
                     });
@@ -81,9 +81,7 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【🎉修复了由于校宝系统更新导致功能失效的问题，所有功能已恢复】</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【刮一刮】修复了部分情况下无法刮开的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】优化了绑定后每次进入时的体验，修复了已绑定情况下有概率提示暂未绑定的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【新·批改中分数计算】使用了新的方法以恢复“显示批改中分数”的功能</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -91,9 +89,7 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 🎉 Fixed an issue caused by Xiaobao system update that broke functionality.</p> 
-    <p style="margin-bottom: 2px; margin-top: 2px;">· 【Scratch Card】Fixed an issue where scratching sometimes failed.</p>
-    <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Organizer】Improved post-binding experience and fixed occasional false “not bound” prompts.</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· [New · Hidden Score Calculation] A new method is used to restore the "Show Hidden Scores" feature</p>
 
     </div>
     
@@ -1428,6 +1424,12 @@ chrome.webRequest.onBeforeRequest.addListener(
                         data.subjectId,
                         data.schoolSemesterId
                     );
+                    M_send_str_msg("appendHiddenScore", {
+                        state: "loading",
+                        assignment: {
+                  
+                        },
+                    }, 0);
                     
                 }
 
@@ -3721,6 +3723,34 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
 
     // --- Final Weighted Calculation ---
     const gradeDetails = scoreDataManager.getFinalObject();
+    const assignmentList = gradeDetails.data.evaluationProjectList;
+    const totalProportionAll = assignmentList.reduce((sum, project) => sum + (Number(project.proportion) || 0), 0);
+    const hasFinalExamPlaceholder = assignmentList.some(project => 
+        project.evaluationProjectId === 1895258 ||
+        project.evaluationProjectEName === "Final Exam(Giaoculator)" ||
+        project.evaluationProjectName === "期末考试(Giaoculator)"
+    );
+    if (!hasFinalExamPlaceholder && totalProportionAll < 100 && Math.abs(totalProportionAll - 80) < 0.01) {
+        assignmentList.push({
+            "evaluationProjectName": "期末考试(Giaoculator)",
+            "evaluationProjectEName": "Final Exam(Giaoculator)",
+            "proportion": 20,
+            "score": null,
+            "scoreStr": "",
+            "scoreLevel": "",
+            "gpa": 0,
+            "gpaStr": "",
+            "scoreIsNull": true,
+            "evaluationProjectList": [],
+            "levelString": "",
+            "code": "code-1895258",
+            "evaluationProjectId": 1895258,
+            "proPath": "1895258,",
+            "parentProId": 0,
+            "evaluationProjectRemark": null,
+            "learningTaskAndExamList": []
+        });
+    }
     let weightedTotal = 0;
     let totalProportion = 0;
 

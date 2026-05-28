@@ -1,4 +1,4 @@
-﻿let version = "1.2.3";
+﻿let version = "1.3.0";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -1224,7 +1224,14 @@ document.onkeydown = function(e) {//快捷键
         simulateClickLogout();
     } else if (e.key >= '1' && e.key <= '4') {
         hideAssignments()
-        simulateClickBar(e.key.charCodeAt(0) - 49);
+        if(e.key == '3'){
+            simulateClickBar('4'.charCodeAt(0) - 49);
+        } else if(e.key == '4'){
+            simulateClickBar('5'.charCodeAt(0) - 49);
+        }else{
+            simulateClickBar(e.key.charCodeAt(0) - 49);
+        }
+        
     } else if (e.key === 'ArrowLeft' && (currentWindow.startsWith("https://") && currentWindow.includes(".schoolis.cn/Home#!/task/list") || (currentWindow.startsWith("https://") && currentWindow.includes(".schoolis.cn/Home#!/schedule")))) {
         try {
             document.getElementsByClassName("fc-prev-button fc-button fc-state-default fc-corner-left fc-corner-right")[0].click();
@@ -3522,7 +3529,7 @@ function showTeamsAssignmentsBox(){
 
 function handleHiddenScoreMessage(payload){
     if (payload && typeof payload === "object") {
-        if (payload.state === "ready") {
+        if (payload.state === "ready" || payload.state === "loading") {
             showFetchedAssignmentData_toPage_Box(payload,0);
             return;
         }
@@ -3557,7 +3564,7 @@ function showFetchedAssignmentData_toPage_Box(payload, redotimes = 0){
         const isLoading = state === "loading";
         const canStart = Boolean(assignment.learningTaskId) && !isLoading;
         const buttonLabel = payload?.buttonLabel || (isLoading ? tlang("准备中...","Preparing...") : tlang("开始计算分数","Start Calculation"));
-        const helperText = payload?.message || (isLoading ? tlang("Giaoculator 正在检测是否可以获取隐藏成绩","Giaoculator is checking whether this hidden score can be calculated") : tlang("Giaoculator 可尝试获取隐藏成绩","Giaoculator can attempt to fetch this hidden score"));
+        const helperText = payload?.message || (isLoading ? tlang("Giaoculator 正在检测是否可以计算隐藏成绩","Giaoculator is checking whether this hidden score can be calculated") : tlang("Giaoculator 可尝试计算隐藏成绩","Giaoculator can attempt to fetch this hidden score"));
         const cursorStyle = canStart ? "pointer" : "not-allowed";
         const disabledAttr = canStart ? "" : "disabled";
         const buttonInner = isLoading ? `<span class="gcalc-hiddenScoreSpinner"></span>${buttonLabel}` : buttonLabel;
@@ -3565,6 +3572,7 @@ function showFetchedAssignmentData_toPage_Box(payload, redotimes = 0){
         const sectionStateClass = isLoading ? "gcalc-hiddenScoreSection--loading" : "gcalc-hiddenScoreSection--ready";
 
         const rootClasses = `${HIDDEN_SCORE_SECTION_CLASS} fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs gcalc-hiddenScoreSection ${sectionStateClass}`;
+        
         const boxHtml = `<div id="middleItem" data-gcalc-hidden-score-container="1" ng-class="[styles.middleItem,styles.allItem]" class="${rootClasses}">
 <p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
 
@@ -3580,6 +3588,7 @@ function showFetchedAssignmentData_toPage_Box(payload, redotimes = 0){
         </div>
     </div>
 </div>`;
+        console.log("showFetchedAssignmentData_toPage_Box", payload,helperText);
         queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0].parentElement.innerHTML = boxHtml;
 
         const startBtn = document.getElementById("gcalc_hiddenScoreStartBtn");
@@ -3627,10 +3636,10 @@ function showFetchedAssignmentData_toPage(score, redotimes = 0){
                     <div ng-class="[styles.itemScore,taskDetailInfo.score!==null?'':styles.itemScoreNone]" class="ng-binding fe-components-stu-app-task-detail-__itemScore--3kcWQccf5Vmk4IDUredeP4" style="text-shadow: rgb(187, 255, 187) 0px 0px 10px;">
                         ${displayScore}
                     </div>
-                    <div ng-class="styles.itemClassInfo" class="">
+                    <div ng-class="styles.itemClassInfo" class="fe-components-stu-app-task-detail-__itemClassInfo--1tNCnybsWFHswNcl6p4fln">
                         <!-- ngIf: taskDetailInfo.displayClassAvgScore -->
                         <!-- ngIf: taskDetailInfo.displayClassMaxScore -->
-                    <img src="${chrome.runtime.getURL("res/icon.png")}" id="gcalc2ScoresIcon" alt="Ico" style="vertical-align: middle; margin-right: 5px; height: 24px;"><p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83">${score>-1?tlang("&nbsp;&nbsp;Giaoculator 已获取分数","&nbsp;&nbsp;Score Fetched from Server"):tlang("&nbsp;&nbsp;由于技术限制，该科目无法显示批改中成绩","&nbsp;&nbsp;Due to technical limitations, this function is currently unavailable for this subject.")}</p></div>
+                    <img src="${chrome.runtime.getURL("res/icon.png")}" id="gcalc2ScoresIcon" alt="Ico" style="vertical-align: middle; margin-right: 5px; height: 24px;"><p ng-class="styles.itemClassInfoShow" ng-if="taskDetailInfo.displayClassAvgScore" class="ng-binding ng-scope fe-components-stu-app-task-detail-__itemClassInfoShow--kHnYpBUlUdD919MkOWU83">${score>-1?tlang("&nbsp;&nbsp;Giaoculator 已计算该分数","&nbsp;&nbsp;Score Fetched from Server"):tlang("&nbsp;&nbsp;该科目总分暂未公布或有多个批改中数据，暂时无法计算该批改中项目","&nbsp;&nbsp;Total score for this subject has not been released or there are multiple items under review, so this item cannot be calculated currently.")}</p></div>
                 </div><!-- end ngIf: taskDetailInfo.scoreType==1 -->
                 <!-- 手动等级 -->
                 <!-- ngIf: taskDetailInfo.scoreType==2 -->
@@ -3667,7 +3676,8 @@ function ensureHiddenScoreStyles(){
             color: #5B8AF9 !important;
         }
         .gcalc-hiddenScoreHelper {
-            margin-top: 16px;
+            margin-left: 5px;
+            margin-top: 0px;
             font-size: 12px;
             color: #5b5c61;
             text-align: center;
@@ -4091,7 +4101,7 @@ function insertCountdownBanner() {
 function showTeamsMainPannelBtn(){
     if(document.getElementById("gc_teamsMainBtn")) return;
     const btnHtml = `<span class="ng-scope fe-modules-task-__examTabItem--308Eb5U31Pt_Y24rocyVZU" id="gc_teamsMainBtn">
-        <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " class="${findHashedClass("fe-components-stu-common-stu-arc-button-__arcbtn")}">
+        <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " style=" margin-right: 10px; " class="${findHashedClass("fe-components-stu-common-stu-arc-button-__arcbtn")}">
     <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang(" Teams 面板","Teams Organizer")}</span>
 </button></stu-arc-button>
     </span>`;
