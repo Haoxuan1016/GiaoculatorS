@@ -39,6 +39,11 @@ async function getFromChromeStorage(keyName) {
     }
 }
 
+function getLoginBgTarget() {
+    return document.querySelector('[class*="fe-components-stu-business-login-enter-box-__loginContainer"]')
+        || document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]');
+}
+
 function changeLoginBox(colormode,retries){
     try{
             const enterBoxs = selectAllByPrefix('fe-components-stu-business-login-enter-box-__inputWrap');
@@ -57,6 +62,8 @@ function changeLoginBox(colormode,retries){
             loginInformation.style.zIndex = "99"
             loginInformation.style.backdropFilter="blur(10px)"
             loginInformation.style.background=colormode? "rgba(255, 255, 255, .7)" : "rgba(038, 040, 042, .065)"
+            // Schoolis 新设计只给右侧 30px 圆角，左侧是 0 — 统一为 30px
+            loginInformation.style.borderRadius = "30px"
             delBox();
             beauty_dymCode();
         }catch(e){
@@ -88,8 +95,25 @@ function beauty_dymCode(){
 }
 
 function delBox(){
-    document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]').style.backgroundSize = "cover";
-    selectByPrefix('fe-components-stu-business-login-enter-box-__schoolBackground').remove();
+    // 新版 Schoolis DOM 多了 __loginContainer 层，挡住了我们设在 __bgWhite 的背景
+    // 把它变透明，并设置 backgroundSize: cover，便于后续直接在 loginContainer 上贴图
+    try {
+        const lc = document.querySelector('[class*="fe-components-stu-business-login-enter-box-__loginContainer"]');
+        if (lc) {
+            lc.style.backgroundColor = "transparent";
+            lc.style.backgroundSize = "cover";
+            lc.style.backgroundPosition = "center";
+            lc.style.backgroundRepeat = "no-repeat";
+        }
+    } catch (e) {}
+    try {
+        const bgWhite = document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]');
+        if (bgWhite) bgWhite.style.backgroundSize = "cover";
+    } catch (e) {}
+    try {
+        const sbg = selectByPrefix('fe-components-stu-business-login-enter-box-__schoolBackground');
+        if (sbg) sbg.remove();
+    } catch (e) {}
 }
 function diyHomepage_LocalImg(){
     try{
@@ -123,7 +147,14 @@ function diyHomepage_LocalImg(){
                 getFromChromeStorage("localImg2")
                 .then((retrievedData) => {
                     if (retrievedData) {
-                        document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]').style.backgroundImage = "url("+retrievedData+")";
+                        const _tgt = getLoginBgTarget();
+                        if (_tgt) {
+                            _tgt.style.backgroundImage = "url("+retrievedData+")";
+                            _tgt.style.backgroundSize = "cover";
+                            _tgt.style.backgroundPosition = "center";
+                            _tgt.style.backgroundRepeat = "no-repeat";
+                            _tgt.style.backgroundColor = "transparent";
+                        }
                     } else {
                         console.log("NOdataFOund for userImg2");
                         
@@ -138,7 +169,14 @@ function diyHomepage_LocalImg(){
                 getFromChromeStorage("localImg")
                 .then((retrievedData) => {
                     if (retrievedData) {
-                        document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]').style.backgroundImage = "url("+retrievedData+")";
+                        const _tgt = getLoginBgTarget();
+                        if (_tgt) {
+                            _tgt.style.backgroundImage = "url("+retrievedData+")";
+                            _tgt.style.backgroundSize = "cover";
+                            _tgt.style.backgroundPosition = "center";
+                            _tgt.style.backgroundRepeat = "no-repeat";
+                            _tgt.style.backgroundColor = "transparent";
+                        }
                     } else {
                         console.log("NOdataFOund for userImg");
                     }

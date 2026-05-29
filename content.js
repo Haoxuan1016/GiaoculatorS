@@ -1,4 +1,4 @@
-﻿let version = "1.3.0";
+﻿let version = "1.3.5";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -1914,17 +1914,26 @@ function beautyLoginPage(srcData,redotimes){
                 //已由上面完成
                 return;
             }
+            // 新版 Schoolis 多了 __loginContainer 层把 __bgWhite 挡住，优先用 loginContainer
+            const _bgTarget = document.querySelector('[class*="fe-components-stu-business-login-enter-box-__loginContainer"]')
+                || document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]');
             if(!loginPageSrc.includes("bing.biturl.top/?res")){
-                queryAllByClassNames("ng-scope fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0")[0].style.backgroundImage = "url("+loginPageSrc+")";
+                if (_bgTarget) {
+                    _bgTarget.style.backgroundImage = "url("+loginPageSrc+")";
+                    _bgTarget.style.backgroundSize = "cover";
+                    _bgTarget.style.backgroundPosition = "center";
+                    _bgTarget.style.backgroundRepeat = "no-repeat";
+                    _bgTarget.style.backgroundColor = "transparent";
+                }
                 return;
             }
-            // 图片：BING
+            // 图片：BING — 用 inline 样式直接打到 _bgTarget，不再依赖会过期的 hash 选择器
+            if (_bgTarget) {
+                _bgTarget.style.position = "relative";
+                _bgTarget.style.backgroundColor = "transparent";
+            }
             const style = document.createElement("style");
             style.textContent = `
-                /* 让容器支持绝对定位覆盖层 */
-                .ng-scope.fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0 {
-                    position: relative;
-                }
                 /* 新图覆盖层，用于淡入动画 */
                 .new-bg-overlay {
                     position: absolute;
@@ -1983,7 +1992,7 @@ function beautyLoginPage(srcData,redotimes){
             // 2. 获取本地缓存的 “上一次的Base64图”
             chrome.storage.local.get(["lastImg"], async (res) => {
                 const oldBase64 = res.lastImg;
-                const bgElem = querySelectorStable(".ng-scope.fe-apps-login-__bgWhite--17b4s19HLx5VBdUGMT5Gz0");
+                const bgElem = _bgTarget;
 
                 if (!bgElem) return; // 没找到目标元素，直接退出
 
@@ -2063,8 +2072,18 @@ function beautyLoginPage(srcData,redotimes){
                 targ.style.background = 'none'; // 移除原背景
                 targ.appendChild(videoContainer); // 添加视频容器
             }
+            // 新版 Schoolis __loginContainer 有不透明背景色挡住视频 — 透明化
+            try {
+                const _lc = document.querySelector('[class*="fe-components-stu-business-login-enter-box-__loginContainer"]');
+                if (_lc) {
+                    _lc.style.backgroundColor = "transparent";
+                    _lc.style.backgroundImage = "none";
+                }
+                const _bgw = document.querySelector('.ng-scope[class*="fe-apps-login-__bgWhite"]');
+                if (_bgw) _bgw.style.backgroundColor = "transparent";
+            } catch (e) {}
 
-    
+
         }
     } catch (error) {
         if(redotimes<50){
@@ -2138,14 +2157,60 @@ function directDownloadFile_AddBtn() {
         document.getElementById('gcalcDownloadBtn').remove()
     }
 }
-function hideOriginalShowScoreDetail(){
-    let htmlContent=`<div style="display: flex;flex-direction: column;align-items: center;margin-top: 22px;margin-bottom: 20px;">
-    <h4 style="text-align: center;margin-bottom: 10px;font-size: 1.2em;padding-top: 49px;padding-bottom: 37px;">${tlang("该科目成绩已在任务预测模式中修改，请进入任务预测模式查看","The grade for this subject has been modified. Please enter task prediction mode to view it.")}</h4>
-    </div>`
+function hideOriginalShowScoreDetail(smsid, subjectid, subjectname, model){
+    const btntext = tlang("进入任务预测","Enter Prediction Mode");
+    // 提示语 + 同款"进入任务预测"按钮（直接内联在提示语下方，不依赖 setTimeout 路径中的 addBtnforshowDisScoresBox）
+    const innerHtml = `
+        <div style="display:flex; flex-direction:column; align-items:center; margin-top:22px; margin-bottom:20px;">
+            <h4 style="text-align:center; margin-bottom:10px; font-size:1.2em; padding-top:49px; padding-bottom:24px;">${tlang("该科目成绩已在任务预测模式中修改，请进入任务预测模式查看","The grade for this subject has been modified. Please enter task prediction mode to view it.")}</h4>
+            <p id="gcalc_editedNoticeBtn" style="font-size:13px; display:inline-block; margin-top:6px; margin-bottom:24px; padding:6px 16px; border:1px solid #ccc; border-radius:4px; cursor:pointer; background:#fff;">${btntext}</p>
+        </div>
+    `;
 
-    queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0].children[0].remove();
-    queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0].children[0].innerHTML=htmlContent;
+    // 严格匹配 __scoreList--<hash>，排除 __scoreListItem* / __scoreListItemLabel* 等子元素的误匹配
+    let container = null;
+    const strictRe = /^fe-components-stu-app-realtime-list-__scoreList--[A-Za-z0-9_-]+$/;
+    const findContainer = () => {
+        const candidates = document.querySelectorAll('[class*="fe-components-stu-app-realtime-list-__scoreList"]');
+        for (const el of candidates) {
+            for (const cls of el.classList) {
+                if (strictRe.test(cls)) return el;
+            }
+        }
+        // 兜底：旧版精确 class
+        return queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0] || null;
+    };
 
+    container = findContainer();
+
+    const _applyNotice = (c) => {
+        if (!c) return false;
+        c.innerHTML = `<div id="gcalc_editedNotice">${innerHtml}</div>`;
+        const btn = document.getElementById("gcalc_editedNoticeBtn");
+        if (btn && smsid !== undefined && subjectid !== undefined) {
+            btn.addEventListener('click', function(){
+                getUsrAssignmentInfoBeforeshowDiyBox(smsid, subjectid, subjectname, model);
+            });
+        }
+        return true;
+    };
+
+    if (container) {
+        _applyNotice(container);
+        return;
+    }
+    console.log("[hideOriginalShowScoreDetail] scoreList container not found, retry later");
+    // 异步重试 5 次（DOM 可能还在渲染中）
+    const _retry = (n) => {
+        if (n <= 0) return;
+        setTimeout(() => {
+            if (document.getElementById("gcalc_editedNotice")) return; // 已经显示过
+            const c = findContainer();
+            if (c) _applyNotice(c);
+            else _retry(n-1);
+        }, 200);
+    };
+    _retry(5);
 }
 function showGPAcount(redotimes,data){
     console.log("INShowGPACount")
@@ -2189,9 +2254,10 @@ function showGPAcount(redotimes,data){
                 if(custom===undefined||custom===null){
                     console.log("no custom");
                 }else{
-                    hideOriginalShowScoreDetail();
+                    // 把 smsId/subjectId/subjectName/GBModel 传过去，让提示语下方的"进入任务预测"按钮也能直接打开预测面板
+                    hideOriginalShowScoreDetail(data.smsId, data.subjectId, subjectName, GBModel);
                 }
-                    
+
             });
         }
 
@@ -2208,10 +2274,28 @@ function showGPAcount(redotimes,data){
         let targetDiv = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c');
         if (targetDiv) {
             targetDiv.insertAdjacentHTML('beforeend', newHtml);
-            
+
         } else {
             console.log('目标元素未找到。');
         }
+        // V1 fallback 警告：如果当前科目走了 V1 手动算分，且有"批改中"任务，提示数据可能不准确
+        try {
+            getFromChromeStorage(`${data.smsId}|${data.subjectId}`).then(course => {
+                if (!course || course.source !== "v1calc") return;
+                const pending = Array.isArray(course.pendingGradingTasks) ? course.pendingGradingTasks : [];
+                if (pending.length === 0) return;
+                const labelCls = findHashedClass("ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel");
+                const warnText = tlang(
+                    `${pending.join("、")} 任务处于批改中无法获取，因此数据不一定准确！`,
+                    `${pending.join(", ")} in grading state — data may be inaccurate.`
+                );
+                const warnHtml = `<li ng-repeat="items in $ctrl.evaluationProjectList" class="ng-scope" id="gcalc_v1WarnLi"> <ul ng-class="commonStyles.clearFix" class="fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB"> <li ng-class="[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]" class="${labelCls}" style="font-size:${tlang(12,10)}px;color:#ff8c00;font-weight:500;">${warnText}</li> </ul> </li>`;
+                const wrap = document.getElementById("gcalc_gpacntstate");
+                if (wrap && !document.getElementById("gcalc_v1WarnLi")) {
+                    wrap.insertAdjacentHTML('beforeend', warnHtml);
+                }
+            }).catch(() => {});
+        } catch (e) {}
         if(showGB){
             try {
 
@@ -2248,13 +2332,18 @@ function hidestudentInfo(){
 }
 
 function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
+    // 当 [Edited] 提示语已经占据整个 scoreList 容器时（gcalc_gpacntstate 已被替换），
+    // 这条路径不该再加按钮——提示语里已经内联了"进入任务预测"按钮。
+    if (document.getElementById("gcalc_editedNotice")) return;
+    if (!document.getElementById("gcalc_gpacntstate") || !document.getElementById("gcalc_diyboxbtn")) return;
+
     let btntext = tlang("进入任务预测","Enter Edit Mode")
     if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
         btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
     }
     let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; margin-top:11px; padding: 4px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
-    
-    
+
+
     document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
     document.getElementById("gcalc_diyboxbtn").insertAdjacentHTML('beforeend', tmpBtn);
     if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
@@ -2439,11 +2528,52 @@ function getUsrAssignmentInfoBeforeshowDiyBox(smsid, subjectid,subjectName,model
                     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                     const responseData = await response.json();
                     console.log("API Response Data:", responseData);
-                    showDiyScoresBox(smsid,subjectid,subjectName,responseData.data.evaluationProjectList);
+                    const projects = responseData?.data?.evaluationProjectList || [];
+                    // V2 接口 (GetDynamicScoreDetail) 在新版可能返回 learningTaskAndExamList: []，
+                    // 导致预测面板看不到任何任务条目。检测到这种情况则去拉 V1 (手动 fetch)
+                    const allEmpty = projects.length > 0 && projects.every(p =>
+                        !Array.isArray(p.learningTaskAndExamList) || p.learningTaskAndExamList.length === 0
+                    );
+                    console.log("[V2Predict] allEmpty=", allEmpty, "projects=", projects.length);
+                    if (allEmpty) {
+                        try {
+                            chrome.runtime.sendMessage(
+                                { type: 'fetchManualAssignmentList', smsId: smsid, subjectId: subjectid, classId: classId },
+                                (resp) => {
+                                    const respLen = Array.isArray(resp?.evaluationProjectList) ? resp.evaluationProjectList.length : 'not-array';
+                                    const respHasData = Array.isArray(resp?.evaluationProjectList) && resp.evaluationProjectList.length > 0;
+                                    const sumOfLearningTaskLists = Array.isArray(resp?.evaluationProjectList) ? resp.evaluationProjectList.reduce((a,p)=>a+(p?.learningTaskAndExamList?.length||0),0) : -1;
+                                    console.log("[V2Predict] fetchManualAssignmentList respLen=", respLen, "hasData=", respHasData, "fromCache=", resp?.fromCache, "totalTasks=", sumOfLearningTaskLists, "respKeys=", resp ? Object.keys(resp) : 'null', "error=", resp?.error, "lastError:", chrome.runtime.lastError);
+                                    // 合并：保留 V2 的 category 元数据（包括 score、proportion、name），把 V1 的 task 列表注入
+                                    let merged = projects;
+                                    if (respHasData) {
+                                        const v1Projects = resp.evaluationProjectList;
+                                        merged = projects.map(v2p => {
+                                            const v1Match = v1Projects.find(v1p =>
+                                                (v1p.evaluationProjectEName && v2p.evaluationProjectEName && v1p.evaluationProjectEName === v2p.evaluationProjectEName) ||
+                                                (v1p.evaluationProjectName && v2p.evaluationProjectName && v1p.evaluationProjectName === v2p.evaluationProjectName)
+                                            );
+                                            return Object.assign({}, v2p, {
+                                                learningTaskAndExamList: (v1Match && Array.isArray(v1Match.learningTaskAndExamList)) ? v1Match.learningTaskAndExamList : []
+                                            });
+                                        });
+                                    }
+                                    showDiyScoresBox(smsid, subjectid, subjectName, merged);
+                                    sys_showload(false);
+                                }
+                            );
+                        } catch (e) {
+                            console.warn("[V2Predict] fetchManualAssignmentList threw:", e);
+                            showDiyScoresBox(smsid, subjectid, subjectName, projects);
+                            sys_showload(false);
+                        }
+                    } else {
+                        showDiyScoresBox(smsid, subjectid, subjectName, projects);
+                        sys_showload(false);
+                    }
                 } catch (error) {
                     console.error("Fetch failed:", error);
-                } finally {
-                    sys_showload(false); // Ensure loading is hidden regardless of success or failure
+                    sys_showload(false);
                 }
             });
         }
@@ -2675,27 +2805,44 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
 
         let calcedAvg = 0;
         let calcedAvgCnt = 0;
-    
+        const failedTasks = [];
+
         item.learningTaskAndExamList.forEach(taskitem => {
+            // "批改中-无法计算" 的任务先收集，稍后合并为一个可展开 bundle 行
+            if (taskitem.gcalcHiddenState === "failed") {
+                failedTasks.push(taskitem);
+                return;
+            }
             let tmpicon = "";
             if(taskitem?.fromGCalc){
                 tmpicon = `<img src="${chrome.runtime.getURL("icon.png")}" style="width:15.5px; height:15.5px; vertical-align: middle; margin-top:-2px; margin-right: 6px;" />`;
             }else{
                 tmpicon = `<img src="https://cdn.schoolis.cn/sis/favicon/sis.ico" style="width:16px; height:16px; vertical-align: middle; margin-right: 6px;" />`;
             }
-            
+
+            // 批改中（已计算出隐藏分）状态标签
+            const isHiddenCalc = taskitem.gcalcHiddenState === "calculated";
+            let hiddenLabel = "";
+            if (isHiddenCalc) {
+                hiddenLabel = ` <span style="color:#888;font-size:11px;">(${tlang("批改中-计算","Grading-Calc")})</span>`;
+            }
+
+            const itemCssClass = item.evaluationProjectEName;
+            const visScoreVal = (taskitem.score!==null) ? (taskitem.score/taskitem.totalScore*100) : "";
+            const scoreDisplay = (taskitem.score===null?"-&nbsp;":(taskitem.score/taskitem.totalScore*100).toFixed(1) + "%");
+
             const listItemHtml = `
-                <div class="${item.evaluationProjectEName}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
+                <div class="${itemCssClass}" data-vis-score="${visScoreVal}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
                 <span title="${taskitem.name}" style="flex: 2; text-align: left;">
                     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                     ${tmpicon}
-                    &nbsp;&nbsp;${limitBytes(taskitem.name, 70)}
+                    &nbsp;&nbsp;${limitBytes(taskitem.name, 70)}${hiddenLabel}
                 </span>
                 <span style="flex: 1; text-align: center;">
-                    
+
                 </span>
                 <span  title="${tlang("详细","Details")}: ${taskitem.score}/${taskitem.totalScore}"  style="flex: 1; text-align: center;">
-                    ${taskitem.score===null?"-&nbsp;":(taskitem.score/taskitem.totalScore*100).toFixed(1)}% 
+                    ${scoreDisplay}
                 </span>
                 </div>
             `;
@@ -2720,23 +2867,23 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
 
                     let assignmentScore = taskitem.score/taskitem.totalScore*100;
                     let assignmentCata = item.evaluationProjectEName;
-                    let insertTarget=document.getElementById("gb_listbox").getElementsByClassName(assignmentCata);
+                    let effCount = gcGetEffectiveCount(assignmentCata); // 含已生效 bundle 的权重
                     sendtopSeccesstip(tlang("原生项目已移除","Original Assignment Removed"));
-    
+
                     let cateScore = document.getElementById(assignmentCata + "_score").getAttribute("scoreValue") ? parseFloat(document.getElementById(assignmentCata + "_score").getAttribute("scoreValue")) : null;
-                
+
                     // 修复：如果原来 cateScore 是空，就直接置0。其余情况正常计算
-                    if(insertTarget.length<=1){
+                    if(effCount<=1){
                         document.getElementById(assignmentCata + "_score").textContent = "-% / -";
                         document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", null);
                     }else{
                         let newCateScore = cateScore
-                        ? (cateScore * insertTarget.length - parseFloat(assignmentScore)) / (insertTarget.length - 1)
+                        ? (cateScore * effCount - parseFloat(assignmentScore)) / (effCount - 1)
                         : -1;
                         document.getElementById(assignmentCata + "_score").textContent = `${newCateScore.toFixed(1)}% / ${scoreToLevel(newCateScore)}`;
                         document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", newCateScore);
-                        console.log(newCateScore," is calc:",cateScore,"*",insertTarget.length,"-",parseFloat(assignmentScore),"/",insertTarget.length-1);
-                    }         
+                        console.log(newCateScore," is calc:",cateScore,"*",effCount,"-",parseFloat(assignmentScore),"/",effCount-1);
+                    }
     
                     if(document.getElementById(assignmentCata + "_score").textContent=="Infinity% / "||document.getElementById(assignmentCata + "_score").textContent=="NaN% / "||document.getElementById(assignmentCata + "_score").textContent.includes("-1")){
                         document.getElementById(assignmentCata + "_score").textContent = "-% / -";
@@ -2747,15 +2894,23 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
                         document.getElementById("SubjectTotal_score").textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
                         document.getElementById("SubjectTotal_score").setAttribute("scoreValue", newOverall);
                     }, 80);
-                
+
                     this.remove();
+                    // 移除后重新推导 bundle 预测分（基于新的 sum_visible / cateScore）
+                    gcRefreshBundlePrediction(assignmentCata);
                 });
             }
             
         });
-        if(calcedAvgCnt>0) document.getElementById(`${item.evaluationProjectEName}_score`).setAttribute("scorevalue", calcedAvg/calcedAvgCnt);
+        // 不再用任务平均分覆盖 category 的 scoreValue —— 保留 fetch 得到的原始分数（V2 / V1）
+        // 用户要求：category 显示从接口获取的分数，而非由可见任务再次平均得到的值
+
+        // 把"批改中-无法计算"的任务合并成一个可展开的 bundle 行
+        if (failedTasks.length > 0) {
+            gcRenderFailedBundle(item, failedTasks);
+        }
     });
-    //init overallScore 
+    //init overallScore
     document.getElementById("SubjectTotal_score").textContent = `${gb_calcTotalScore()}% / ${scoreToLevel(gb_calcTotalScore())}`;
 
     document.getElementById("gb_appendBtn").addEventListener("click", function() {
@@ -2808,7 +2963,7 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
         }
 
         const listItemHtml = `
-                <div class="${assignmentCata}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
+                <div class="${assignmentCata}" data-vis-score="${Number(assignmentScore)}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
                 <span title="${assignmentName}" style="flex: 2; text-align: left;">
                     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                     <img src="${chrome.runtime.getURL("icon.png")}" style="width:15.5px; height:15.5px; vertical-align: middle; margin-top:-2px; margin-right: 6px;" />
@@ -2835,16 +2990,16 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
             console.log(newTarget)
 
             newTarget.addEventListener("click", function() {
-                let insertTarget=document.getElementById("gb_listbox").getElementsByClassName(assignmentCata);
+                let effCount = gcGetEffectiveCount(assignmentCata); // 含已生效 bundle 的权重
                 sendtopSeccesstip(tlang("自定义项目已移除","Cunstom Assignment Removed"));
 
                 let cateScore = document.getElementById(assignmentCata + "_score").getAttribute("scoreValue") ? parseFloat(document.getElementById(assignmentCata + "_score").getAttribute("scoreValue")) : null;
-            
+
                 // 修复：如果原来 cateScore 是空，就直接置0。其余情况正常计算
                 let newCateScore = cateScore
-                    ? (cateScore * insertTarget.length - parseFloat(assignmentScore)) / (insertTarget.length - 1)
+                    ? (cateScore * effCount - parseFloat(assignmentScore)) / (effCount - 1)
                     : -1;
-                console.log(newCateScore," is calc:",cateScore,"*",insertTarget.length,"-",parseFloat(assignmentScore),"/",insertTarget.length-1);
+                console.log(newCateScore," is calc:",cateScore,"*",effCount,"-",parseFloat(assignmentScore),"/",effCount-1);
             
                 document.getElementById(assignmentCata + "_score").textContent = `${newCateScore.toFixed(1)}% / ${scoreToLevel(newCateScore)}`;
                 document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", newCateScore);
@@ -2858,21 +3013,25 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
                     document.getElementById("SubjectTotal_score").textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
                     document.getElementById("SubjectTotal_score").setAttribute("scoreValue", newOverall);
                 }, 80);
-            
+
                 this.remove();
+                // 移除后重新推导 bundle 预测分
+                gcRefreshBundlePrediction(assignmentCata);
             });
             
 
             let cateScoreDiv = document.getElementById(assignmentCata + "_score").getAttribute("scoreValue");
             let cateScore = cateScoreDiv ? parseFloat(cateScoreDiv) : null;
 
-
-            
-            let newCateScore = cateScore ? (cateScore*(insertTarget.length-1) + parseFloat(assignmentScore))/(insertTarget.length) : parseFloat(assignmentScore);
+            // 插入后再取有效任务数（含已生效 bundle 权重）
+            let effCount = gcGetEffectiveCount(assignmentCata);
+            let newCateScore = cateScore ? (cateScore*(effCount-1) + parseFloat(assignmentScore))/(effCount) : parseFloat(assignmentScore);
             //Update Score
             
             document.getElementById(assignmentCata+"_score").textContent = `${newCateScore.toFixed(1)}% / ${scoreToLevel(newCateScore)}`;
             document.getElementById(assignmentCata+"_score").setAttribute("scoreValue",newCateScore);
+            // 新增可见任务后重新推导 bundle 预测分
+            gcRefreshBundlePrediction(assignmentCata);
 
             //ANIMATION
             let scoreElement = document.getElementById(assignmentCata + "_score");
@@ -2932,6 +3091,197 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
 
 }
     
+// ---- Task9: "批改中-无法计算" bundle 支持 ----
+// 有效任务数：可见任务数 + 已生效 bundle 的成员数（实现"权重 *n"）
+function gcGetEffectiveCount(cataName){
+    const lb = document.getElementById("gb_listbox");
+    if(!lb) return 0;
+    let n = lb.getElementsByClassName(cataName).length;
+    const bundleRow = lb.querySelector('[data-bundle-cate="' + cataName + '"]');
+    if (bundleRow && bundleRow.getAttribute("data-bundle-active") === "1") {
+        n += parseInt(bundleRow.getAttribute("data-bundle-size")) || 0;
+    }
+    return n;
+}
+
+function gcRefreshTotalScore(animate){
+    const el = document.getElementById("SubjectTotal_score");
+    if(!el) return;
+    const newOverall = gb_calcTotalScore();
+    el.textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
+    el.setAttribute("scoreValue", newOverall);
+    if(animate){
+        el.style.transition = "transform 0.3s ease-in-out";
+        el.style.transform = "scale(1.4)";
+        setTimeout(() => { el.style.transform = "scale(1)"; }, 300);
+    }
+}
+
+function gcParseCateScore(cata){
+    const scoreEl = document.getElementById(cata + "_score");
+    if(!scoreEl) return null;
+    let v = scoreEl.getAttribute("scoreValue");
+    if(v===null || v==="" || v==="null" || isNaN(parseFloat(v))) return null;
+    return parseFloat(v);
+}
+
+// 计算某 category 的可见任务分数之和（按百分比；data-vis-score 在渲染时写入）
+function gcGetSumVisible(cata){
+    const lb = document.getElementById("gb_listbox");
+    if(!lb) return 0;
+    let sum = 0;
+    const rows = lb.getElementsByClassName(cata);
+    for (let i=0; i<rows.length; i++){
+        const v = parseFloat(rows[i].getAttribute("data-vis-score"));
+        if (!isNaN(v)) sum += v;
+    }
+    return sum;
+}
+
+// 由 category 分推算出 bundle 中每个"批改中-无法计算"任务的预测分
+//   推导：category = (sum_visible + predicted*n) / (visN+n)
+//        => predicted = (category*(visN+n) - sum_visible) / n
+function gcRefreshBundlePrediction(cata){
+    const lb = document.getElementById("gb_listbox");
+    if(!lb) return;
+    const bundleRow = lb.querySelector('[data-bundle-cate="' + cata + '"]');
+    if (!bundleRow) return;
+    const n = parseInt(bundleRow.getAttribute("data-bundle-size")) || 0;
+    if (n === 0) return;
+    const cateScore = gcParseCateScore(cata);
+    const visN = lb.getElementsByClassName(cata).length;
+    const predEl = document.getElementById("gcBundlePred_" + cata);
+    if (cateScore === null) {
+        if (predEl) predEl.innerHTML = `&mdash;&mdash; <span style="color:#888;font-size:11px;">(&times;${n})</span>`;
+        bundleRow.setAttribute("data-bundle-active","0");
+        bundleRow.setAttribute("data-bundle-score","");
+        return;
+    }
+    const sumVis = gcGetSumVisible(cata);
+    const predicted = (cateScore*(visN+n) - sumVis) / n;
+    bundleRow.setAttribute("data-bundle-active","1");
+    bundleRow.setAttribute("data-bundle-score", predicted);
+    if (predEl) {
+        predEl.innerHTML = `${predicted.toFixed(1)}% <span style="color:#888;font-size:11px;">(&times;${n})</span>`;
+    }
+}
+
+// 把一个 category 的全部"批改中-无法计算"任务渲染成一个可展开的 bundle 行
+// 预测分自动从 category 分推导，无需用户输入
+function gcRenderFailedBundle(item, failedTasks){
+    const lb = document.getElementById("gb_listbox");
+    if(!lb) return;
+    const cata = item.evaluationProjectEName;
+    const n = failedTasks.length;
+
+    let memberRows = "";
+    failedTasks.forEach(t => {
+        memberRows += `
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background-color: rgba(245,245,245,0.85); margin-bottom:2px; margin-top:2px; border-radius:5px; opacity:0.75;">
+                <span title="${t.name}" style="flex:2; text-align:left;">
+                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                    <img src="https://cdn.schoolis.cn/sis/favicon/sis.ico" style="width:14px;height:14px;vertical-align:middle;margin-right:6px;" />
+                    ${limitBytes(t.name||"", 64)} <span style="color:#888;font-size:11px;">(${tlang("批改中-无法计算","Grading-N/A")})</span>
+                </span>
+                <span style="flex:1; text-align:center;"></span>
+                <span style="flex:1; text-align:center;">&mdash;&mdash;</span>
+            </div>
+        `;
+    });
+
+    // n 个校宝小图标，横向半重叠（最多 5 个，超出显示 +k）
+    const maxIcons = Math.min(n, 5);
+    let iconsHtml = `<span style="display:inline-flex; align-items:center; vertical-align:middle; margin-right:8px;">`;
+    for (let i=0; i<maxIcons; i++){
+        iconsHtml += `<img src="https://cdn.schoolis.cn/sis/favicon/sis.ico" style="width:16px; height:16px; ${i===0?'':'margin-left:-8px;'} border-radius:50%; box-shadow:0 0 0 1.5px white;" />`;
+    }
+    if (n > maxIcons){
+        iconsHtml += `<span style="margin-left:-4px; padding:1px 5px; font-size:10px; color:#555; background:#eee; border-radius:8px; box-shadow:0 0 0 1.5px white;">+${n-maxIcons}</span>`;
+    }
+    iconsHtml += `</span>`;
+
+    const bundleHtml = `
+        <div class="gcBundleRow" data-bundle-cate="${cata}" data-bundle-size="${n}" data-bundle-score="" data-bundle-active="0" style="display:flex; align-items:center; justify-content:space-between; padding:10px; background-color: rgba(214,229,255,0.9); margin-bottom:3px; margin-top:3px; border-radius:5px; box-shadow:0 2px 4px rgba(0,0,0,0.1); cursor:pointer;">
+            <span style="flex:2; text-align:left;">
+                &nbsp;&nbsp;&nbsp;&nbsp;
+                <span id="gcBundleArrow_${cata}" style="display:inline-block; width:14px; user-select:none; color:#3b5bdb;">&#9654;</span>
+                ${iconsHtml}
+                ${tlang("批改中合并","In-Grading Bundle")} <span style="color:#888;font-size:11px;">(${n} ${tlang("项","items")})</span>
+            </span>
+            <span style="flex:1; text-align:center;"></span>
+            <span id="gcBundlePred_${cata}" title="${tlang("由科目分推算","Derived from category score")}" style="flex:1; text-align:center; color:#3b5bdb; font-weight:500;">
+                &mdash;&mdash; <span style="color:#888;font-size:11px;">(&times;${n})</span>
+            </span>
+        </div>
+        <div id="gcBundleSubs_${cata}" style="display:none;">
+            ${memberRows}
+            <div style="display:flex; align-items:center; justify-content:center; padding:10px; background-color: rgba(255,255,255,0.6); margin-bottom:3px; margin-top:2px; border-radius:5px;">
+                <button id="gcBundleRemoveAll_${cata}" style="font-size:12px; background-color:#f44336; color:white; padding:6px 14px; border:none; border-radius:4px; cursor:pointer;">
+                    ${tlang("点击同时移除"+n+"个项目", "Remove all "+n+" items")}
+                </button>
+            </div>
+        </div>
+    `;
+    lb.insertAdjacentHTML('beforeend', bundleHtml);
+
+    const bundleRow = lb.querySelector('[data-bundle-cate="' + cata + '"]');
+    const arrowEl = document.getElementById("gcBundleArrow_" + cata);
+    const subsEl = document.getElementById("gcBundleSubs_" + cata);
+    const removeBtn = document.getElementById("gcBundleRemoveAll_" + cata);
+
+    function toggleSubs(){
+        if(!subsEl) return;
+        if(subsEl.style.display==="none"){
+            subsEl.style.display="block";
+            if (arrowEl) arrowEl.innerHTML="&#9660;";
+        } else {
+            subsEl.style.display="none";
+            if (arrowEl) arrowEl.innerHTML="&#9654;";
+        }
+    }
+
+    if (bundleRow) {
+        bundleRow.addEventListener("click", function(ev){
+            // 点击红色"移除"按钮时不触发展开/收起
+            if (ev.target && (ev.target.id === ("gcBundleRemoveAll_"+cata))) return;
+            toggleSubs();
+        });
+    }
+
+    if (removeBtn) {
+        removeBtn.addEventListener("click", function(ev){
+            ev.stopPropagation();
+            // 移除 bundle -> category 退回为"仅可见任务的平均分"
+            const scoreEl = document.getElementById(cata + "_score");
+            const visN = document.getElementById("gb_listbox").getElementsByClassName(cata).length;
+            const sumVis = gcGetSumVisible(cata);
+            // 先把 bundle 从 DOM 中移除，这样 gcGetEffectiveCount 不再计入 bundle
+            if (bundleRow) bundleRow.remove();
+            if (subsEl) subsEl.remove();
+            if (scoreEl) {
+                if (visN > 0) {
+                    const base = sumVis / visN;
+                    scoreEl.textContent = `${base.toFixed(1)}% / ${scoreToLevel(base)}`;
+                    scoreEl.setAttribute("scoreValue", base);
+                } else {
+                    scoreEl.textContent = "-% / -";
+                    scoreEl.setAttribute("scoreValue", null);
+                }
+            }
+            // 从数据中移除这些任务（保证保存/再次打开一致）
+            if (item && Array.isArray(item.learningTaskAndExamList)) {
+                const ids = failedTasks.map(f => f.id);
+                item.learningTaskAndExamList = item.learningTaskAndExamList.filter(t => ids.indexOf(t.id) === -1);
+            }
+            gcRefreshTotalScore(true);
+            sendtopSeccesstip(tlang("已移除"+n+"个批改中项目", "Removed "+n+" in-grading item(s)"));
+        });
+    }
+
+    // 初始计算并显示预测分（此时 bundle 已存在于 DOM，可被 gcGetEffectiveCount 计入）
+    gcRefreshBundlePrediction(cata);
+}
+
 function gb_calcTotalScore(){
     const select=document.getElementById("gb_cataSelect");
     let totalScore = 0;
@@ -3044,7 +3394,7 @@ function showState2DiyScoresBox(smsId,subjectId,subjectName,oriScore){
 
 
 function closeGcalcBox(){
-    queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[3].click();
+    queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[5].click();
 }
 
 function ribbon_Fireworks(duration_Seconds){
@@ -3541,6 +3891,11 @@ function handleHiddenScoreMessage(payload){
             return;
         }
 
+        if (payload.state === "blocked") {
+            showFetchedAssignmentData_toPage_Info(payload.message || tlang("无法计算隐藏成绩","Cannot calculate hidden score"), 0);
+            return;
+        }
+
         if (payload.state === "error") {
             showFetchedAssignmentData_toPage(-1,0);
             return;
@@ -3549,6 +3904,32 @@ function handleHiddenScoreMessage(payload){
 
     if (typeof payload === "number") {
         showFetchedAssignmentData_toPage(payload,0);
+    }
+}
+
+function showFetchedAssignmentData_toPage_Info(message, redotimes = 0) {
+    ensureHiddenScoreStyles();
+    try {
+        const iconUrl = chrome.runtime.getURL("res/icon.png");
+        // 中性 info 配色 — 不用橙/红，避免暗示"出错"
+        const rootClasses = `${HIDDEN_SCORE_SECTION_CLASS} fe-components-stu-app-task-detail-__middleItem--3UARKdlVHw_dUkgmWyvb0o fe-components-stu-app-task-detail-__allItem--2937HX4klXBd-XkSerQYvs gcalc-hiddenScoreSection gcalc-hiddenScoreSection--info`;
+        const boxHtml = `<div id="middleItem" data-gcalc-hidden-score-container="1" ng-class="[styles.middleItem,styles.allItem]" class="${rootClasses}">
+<p ng-class="styles.itemTitle" class="ng-binding fe-components-stu-app-task-detail-__itemTitle--XjtjPzbGMxENYjwBLXlxQ">任务成绩</p>
+<div style="display:flex;flex-direction:column;align-items:center;padding-top:18px;padding-bottom:10px" ng-if="taskDetailInfo.scoreType==1" class="ng-scope">
+    <div style="display:flex;align-items:center;background:#f4f5f7;color:#555;border:1px solid #e1e3e6;border-radius:6px;padding:10px 14px;max-width:320px;font-size:13px;line-height:1.5;">
+        <img src="${iconUrl}" alt="Ico" style="height:20px;margin-right:8px;flex:0 0 auto;">
+        <span class="gcalc-hiddenScoreHelper" style="color:#555;">${message}</span>
+    </div>
+</div>
+</div>`;
+        const anchor = queryAllByClassNames("fe-components-stu-app-task-detail-__scoreInfo--28FZIgd0wM_50-7QeEdEJy")[0];
+        if (anchor && anchor.parentElement) {
+            anchor.parentElement.innerHTML = boxHtml;
+        }
+    } catch (error) {
+        if (redotimes < 10) {
+            setTimeout(() => showFetchedAssignmentData_toPage_Info(message, redotimes + 1), redotimes * 20);
+        }
     }
 }
 
@@ -4058,10 +4439,13 @@ function saveGoals(smsId){
 
 function insertCountdownBanner() {
     console.log("insertCountdownBanner");
+    if (document.getElementById('gc_countdownBanner') || document.getElementById('countdown')) return;
     const now = new Date();
-    const deadline = new Date(Date.UTC(2025, 5, 10, 6, 0, 0)); 
+    // JS month is 0-based: 5 means June.
+    const deadline = new Date(Date.UTC(2026, 5, 10, 6, 0, 0)); 
     if (now >= deadline) return;
     const banner = document.createElement('div');
+    banner.id = 'gc_countdownBanner';
     banner.style.cssText = 'position: relative;left: -20px;width: 102.2%;background: #FD9900;color: white;text-align: center;font-size: 13px;font-weight: bold;padding: 1px 5px;z-index: 1;box-shadow: rgba(0, 0, 0, 0.2) 0px 2px 4px;display: flex;justify-content: space-between;align-items: center;';
 
     const content = document.createElement('div');
@@ -4098,17 +4482,32 @@ function insertCountdownBanner() {
 }
 
 
+function updateTeamsReauthBadge(visible) {
+    const badge = document.getElementById("gc_teamsReauthBadge");
+    if (badge) badge.style.display = visible ? "inline-block" : "none";
+}
+
 function showTeamsMainPannelBtn(){
     if(document.getElementById("gc_teamsMainBtn")) return;
+    const reauthBadgeHtml = `<span id="gc_teamsReauthBadge" title="${tlang('授权过期，点击重新授权','Authorization expired — click to re-authorize')}" style="display:none;width:14px;height:14px;line-height:14px;border-radius:50%;background:#ff8c00;color:#fff;font-size:11px;font-weight:bold;text-align:center;margin-left:4px;vertical-align:middle;font-family:Arial,sans-serif;">!</span>`;
     const btnHtml = `<span class="ng-scope fe-modules-task-__examTabItem--308Eb5U31Pt_Y24rocyVZU" id="gc_teamsMainBtn">
         <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " style=" margin-right: 10px; " class="${findHashedClass("fe-components-stu-common-stu-arc-button-__arcbtn")}">
-    <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang(" Teams 面板","Teams Organizer")}</span>
+    <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang(" Teams 面板","Teams Organizer")}${reauthBadgeHtml}</span>
 </button></stu-arc-button>
     </span>`;
 
     const parentElement = querySelectorStable('.ng-scope.fe-modules-task-__examTab--1ZAmHzjYqG3fNys7mmzbQs');
     if (parentElement) {
         parentElement.insertAdjacentHTML('afterbegin', btnHtml);
+        // 初始读取 reauth 状态来决定 badge 可见性，并监听后续变化
+        getFromChromeStorage("MS_ReauthRequired").then(v => updateTeamsReauthBadge(v === true));
+        try {
+            chrome.storage.onChanged.addListener((changes, area) => {
+                if (area === "local" && changes.MS_ReauthRequired) {
+                    updateTeamsReauthBadge(changes.MS_ReauthRequired.newValue === true);
+                }
+            });
+        } catch (e) {}
         setTimeout(() => {
             document.getElementById("gc_teamsMainBtn").addEventListener('click', async function() {
                 try {
@@ -4121,6 +4520,16 @@ function showTeamsMainPannelBtn(){
                     ]);
 
                     const hasRefreshToken = typeof refreshToken === 'string' ? refreshToken.length > 0 : !!refreshToken;
+
+                    // 最高优先级：reauth 状态下任何点击都直接触发重新授权 + 告知性提示
+                    if (reauthRequired === true) {
+                        sendInfotipLong(tlang(
+                            "授权过期，已打开窗口进行重新授权。您可查看是否有弹出窗口，并也许需要手动操作。",
+                            "Authorization expired. A re-authorization window has been opened. Please check for a popup — you may need to complete it manually."
+                        ));
+                        try { chrome.runtime.sendMessage({ type: 'bindMSAccount', xbAccount: 'Rebind' }); } catch (e) {}
+                        return;
+                    }
 
                     if (enabled) {
                         const now = Date.now();

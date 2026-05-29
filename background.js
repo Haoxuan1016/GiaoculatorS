@@ -81,7 +81,10 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【新·批改中分数计算】使用了新的方法以恢复“显示批改中分数”的功能</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【主页美化】修复了背景图/视频不生效的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【批改分计算】修复了部分情况下显示异常的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【自定义分数】修复了该功能无法正常使用的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】修复了部分情况下频繁弹窗的问题</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -89,7 +92,10 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· [New · Hidden Score Calculation] A new method is used to restore the "Show Hidden Scores" feature</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Homepage UI】Fixed background image/video not loading properly</p>
+<p style="margin-bottom: 2px; margin-top: 2px;">· 【Score Calc】Fixed display issues in certain cases</p>
+<p style="margin-bottom: 2px; margin-top: 2px;">· 【Custom Score】Fixed the feature not working properly</p>
+<p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】Fixed frequent pop-ups in some cases</p>
 
     </div>
     
@@ -874,6 +880,7 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
             if (response.ok) {
 
                 let isV1 = false;
+                let v1PendingGradingTasks = [];
                 let data = await response.json();
                 console.log(`[init_V2Calc] Fetched data for subjectId: ${subjectId}`, data);
 
@@ -884,6 +891,7 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
                     formed = await getSubjectGrades(semesterId,subjectId,convertToMSDate(bgn_info).split('T')[0],convertToMSDate(end_info).split('T')[0],classId);
                     console.log("V1Calc.Formed",formed)
                     data = formed.gradeDetails;
+                    v1PendingGradingTasks = formed.pendingGradingTasks || [];
                     isV1 = true;
                 }
                 let subjectScore = 0;
@@ -961,7 +969,8 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
                     isInGrade: true,
                     classType: 2,
                     isOriginal: true,
-                    source: isV1?"v1calc":"v2calc"
+                    source: isV1?"v1calc":"v2calc",
+                    pendingGradingTasks: isV1 ? v1PendingGradingTasks : []
                 };
 
                 // 异步保存数据到 chrome.storage.local
@@ -1621,14 +1630,34 @@ async function C_continueHiddenScoreCalculation(learningTaskId) {
 
         const totalCategoryScore = session.categoryScore * categoryTaskCount;
         const hiddenScore = totalCategoryScore - knownScoreSum;
+        let roundedScore = Math.round(hiddenScore * 10) / 10;
 
-        if (Number.isFinite(hiddenScore)) {
-            console.log("[HiddenScore]", hiddenScore);
-            M_send_str_msg("appendHiddenScore", { state: "done", score: hiddenScore }, 0);
-        } else {
-            console.error("[HiddenScore] error: failed to calculate hidden score");
-            M_send_str_msg("appendHiddenScore", -1, 0);
+        // 极值兜底：分数应在 10–110 之间；超出说明
+        // (a) 该任务实际处于"批改中且未填分"状态（类别均分还未包含此任务）
+        // (b) 类别中存在多个未公开成绩，"多 hidden" 检测漏判
+        if (!Number.isFinite(roundedScore) || roundedScore < 10 || roundedScore > 110) {
+            console.warn("[HiddenScore] out-of-range:", roundedScore,
+                "categoryScore=", session.categoryScore,
+                "categoryTaskCount=", categoryTaskCount,
+                "knownScoreSum=", knownScoreSum);
+            M_send_str_msg("appendHiddenScore", {
+                state: "blocked",
+                message: (navigator.language || "").startsWith("zh")
+                    ? "存在多个批改中任务，或老师尚未填入分数，暂时无法计算"
+                    : "Multiple in-grading tasks, or teacher hasn't entered scores yet — cannot calculate"
+            }, 0);
+            clearHiddenScoreSession(learningTaskId);
+            return;
         }
+
+        // >100 但 ≤110 的情况：钳制到 100（分数最高不应超过 100%）
+        if (roundedScore > 100) {
+            console.log("[HiddenScore] clamping", roundedScore, "to 100");
+            roundedScore = 100;
+        }
+
+        console.log("[HiddenScore]", roundedScore);
+        M_send_str_msg("appendHiddenScore", { state: "done", score: roundedScore }, 0);
     } catch (error) {
         console.error("[HiddenScore] error during calculation:", error);
         M_send_str_msg("appendHiddenScore", -1, 0);
@@ -1637,11 +1666,83 @@ async function C_continueHiddenScoreCalculation(learningTaskId) {
     }
 }
 
+// 静默计算单个隐藏分数。返回 number（成功）或 null（失败 / 无法计算）。
+// 用于 V1 预测面板：批改中任务先尝试静默 calc，再决定显示方式。
+async function computeHiddenScoreSilent(learningTaskId, classId, subjectId, semesterId) {
+    try {
+        const targetLearningTaskURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${learningTaskId}&gcalcSysFetch`;
+        const targetDetailResponse = await fetch(targetLearningTaskURL);
+        const targetDetail = await targetDetailResponse.json();
+        const targetTaskData = targetDetail?.data;
+        if (!targetTaskData || !Array.isArray(targetTaskData.evaProjects) || targetTaskData.evaProjects.length === 0) return null;
+
+        const targetCategory = targetTaskData.evaProjects.find(project => project && project.id);
+        const targetCategoryId = targetCategory?.id;
+        if (!targetCategoryId) return null;
+
+        const semesterRange = await C_getSemesterDateInfo(semesterId);
+        if (!semesterRange || !semesterRange.startDate || !semesterRange.endDate) return null;
+
+        const tasksURL = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${semesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=${semesterRange.startDate}&endTime=${semesterRange.endDate}&mode=null&pageIndex=1&pageSize=100&gcalc=gcalc_bg&gcalc=noRedirect`;
+        const tasksResponse = await fetch(tasksURL);
+        const tasksResult = await tasksResponse.json();
+        const tasks = tasksResult?.data?.list || [];
+        if (tasks.length === 0) return null;
+
+        const subjectURL = `https://tsinglanstudent.schoolis.cn/api/DynamicScore/GetDynamicScoreDetail?classId=${classId}&subjectId=${subjectId}&semesterId=${semesterId}&gcalc=gcalc_bg`;
+        const subjectResponse = await fetch(subjectURL);
+        const subjectData = await subjectResponse.json();
+        if (subjectData?.msg != null || subjectData?.data == null) return null;
+
+        const categoryInfo = C_findEvaluationProject(subjectData?.data?.evaluationProjectList, targetCategoryId);
+        if (!categoryInfo || typeof categoryInfo.score !== "number") return null;
+
+        let categoryTaskCount = 0;
+        let knownScoreSum = 0;
+        let otherHiddenCount = 0;
+
+        for (const task of tasks) {
+            if (task.finishState === null) continue;
+            const taskDetailUrl = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetDetail?learningTaskId=${task.id}&gcalc=gcalc_bg`;
+            const taskDetailResponse = await fetch(taskDetailUrl);
+            const taskDetail = await taskDetailResponse.json();
+            const taskData = taskDetail?.data;
+            if (!taskData || !Array.isArray(taskData.evaProjects)) continue;
+            const belongsToTargetCategory = taskData.evaProjects.some(project => project.id === targetCategoryId);
+            if (!belongsToTargetCategory) continue;
+            categoryTaskCount++;
+            const isHiddenTask = task.finishState === 1 && task.syncTime === "0001-01-01T00:00:00";
+            if (isHiddenTask && task.id !== learningTaskId) {
+                otherHiddenCount++;
+                continue;
+            }
+            if (!isHiddenTask) {
+                const scoreValue = typeof taskData.score === "number" ? taskData.score : task.score;
+                if (typeof scoreValue === "number") knownScoreSum += scoreValue;
+            }
+        }
+
+        if (otherHiddenCount > 0) return null;
+        if (categoryTaskCount === 0) return null;
+
+        const totalCategoryScore = categoryInfo.score * categoryTaskCount;
+        const hiddenScore = totalCategoryScore - knownScoreSum;
+        const roundedScore = Math.round(hiddenScore * 10) / 10;
+        if (!Number.isFinite(roundedScore) || roundedScore < 10 || roundedScore > 110) return null;
+        return roundedScore > 100 ? 100 : roundedScore;
+    } catch (error) {
+        console.warn("[computeHiddenScoreSilent] error:", error);
+        return null;
+    }
+}
+
 async function C_getSemesterDateInfo(semesterId) {
     try {
         const response = await fetch("https://tsinglanstudent.schoolis.cn/api/School/GetSchoolSemesters");
         const data = await response.json();
-        const semester = data?.data?.find(item => item.id === semesterId);
+        // 用宽松比较：semesterId 可能是字符串（来自消息/URL），API 返回是数字
+        const target = Number(semesterId);
+        const semester = data?.data?.find(item => Number(item.id) === target);
         if (!semester) {
             return null;
         }
@@ -1712,6 +1813,10 @@ async function C_getScoreForAssignment(learningTaskId, classId, subjectId, semes
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message.type) return;
+
+    // 让独立异步监听器处理 (return; 表示本监听器不负责响应)
+    // 否则下方末尾的 sendResponse({status:"received"}) 会抢先关闭 channel
+    if (message.type === "fetchManualAssignmentList") return;
 
     console.log(`[Service Worker] Received message:`, message);
 
@@ -1807,6 +1912,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     sendResponse({ status: "received" }); // 确保响应，不然可能报错
+});
+
+// 独立监听器：V2 预测面板的手动 assignment 拉取，带 10 分钟缓存
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type !== "fetchManualAssignmentList") return;
+    (async () => {
+        try {
+            const smsId = message.smsId;
+            const subjectId = message.subjectId;
+            const classId = message.classId;
+            // cacheKey 带版本：v4 = 过滤掉 finishState===null 的 initiated 任务
+            const cacheKey = `${smsId}|${subjectId}|V2PredictCache_v4`;
+
+            // 清掉历史遗留的"预测面板顺手装上"的 GetDynamicScoreDetail 重定向规则
+            // （这条规则会把 V2 详情请求顶成本地 V1 数据，本次修复后不再安装；这里再 best-effort 清一次）
+            try {
+                if (typeof classId === "number" && !Number.isNaN(classId)) {
+                    chrome.declarativeNetRequest.updateDynamicRules({
+                        removeRuleIds: [classId - Number(smsId)]
+                    });
+                }
+            } catch (cleanupErr) {
+                console.warn("[fetchManualAssignmentList] cleanup stale rule failed:", cleanupErr);
+            }
+
+            // 缓存命中（10 分钟以内）
+            const cached = await getFromChromeStorage(cacheKey);
+            if (cached && typeof cached.ts === "number" &&
+                (Date.now() - cached.ts < 10 * 60 * 1000) &&
+                Array.isArray(cached.evaluationProjectList) &&
+                cached.evaluationProjectList.length > 0) {
+                sendResponse({ evaluationProjectList: cached.evaluationProjectList, fromCache: true });
+                return;
+            }
+
+            // 缓存失效或不存在：走 V1 (getSubjectGrades) 重新拉
+            const semInfo = await C_getSemesterDateInfo(smsId);
+            if (!semInfo || !semInfo.startDate || !semInfo.endDate) {
+                sendResponse({ error: "no semester info", evaluationProjectList: [] });
+                return;
+            }
+            // 关键：installRedirectRule=false —— 预测面板只是看一下数据，
+            // 不要污染 declarativeNetRequest（否则成绩详情页会被这份本地 V1 数据顶替掉 V2 真实返回）
+            const result = await getSubjectGrades(smsId, subjectId, semInfo.startDate, semInfo.endDate, classId, false);
+            const list = result?.gradeDetails?.data?.evaluationProjectList || [];
+            // 写缓存
+            await saveToChromeStorage(cacheKey, { ts: Date.now(), evaluationProjectList: list });
+            sendResponse({ evaluationProjectList: list, fromCache: false });
+        } catch (e) {
+            console.error("[fetchManualAssignmentList] error:", e);
+            sendResponse({ error: String(e && e.message || e), evaluationProjectList: [] });
+        }
+    })();
+    return true; // 异步响应：保持 message channel 开放
 });
 
 function logic_combineIdsBetter(smsId, subjectId) {
@@ -2305,11 +2464,14 @@ function T_fetchOneDriveFiles(){
 }
 
 
+let MSRetryTeamsInitInProgress = false;
 async function T_retryTeamsInitAfterAuthFailure() {
-    if (MSAuthRetryInProgress) {
+    // 用独立的标记防止此函数并发；不复用 MSAuthRetryInProgress，
+    // 否则会把 T_initMS 内部触发的 M_BindMSAccount("Rebind") 一并屏蔽
+    if (MSRetryTeamsInitInProgress) {
         return;
     }
-    MSAuthRetryInProgress = true;
+    MSRetryTeamsInitInProgress = true;
     try {
         const state = await T_initMS();
         if (state === 1) {
@@ -2321,7 +2483,7 @@ async function T_retryTeamsInitAfterAuthFailure() {
     } catch (error) {
         console.error('[TeamsAuthRetry] Failed to re-init Teams auth', error);
     } finally {
-        MSAuthRetryInProgress = false;
+        MSRetryTeamsInitInProgress = false;
     }
 }
 
@@ -2710,11 +2872,25 @@ const TOKEN_URL = `https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token
 
 
 async function M_BindMSAccount(xbAccount) {
+    // 单窗口互斥：防止 launchWebAuthFlow 在多触发路径下并发开窗
+    if (MSAuthRetryInProgress) {
+        console.log("[M_BindMSAccount] another auth flow in progress, skip");
+        return;
+    }
+    MSAuthRetryInProgress = true;
+
     let isNewBind = true;
     //不再传入xbAccount
     if(xbAccount=="Rebind"){
-        xbAccount=(await getFromChromeStorage("MSUserProfile"))["xbAccount"];
+        try {
+            xbAccount=(await getFromChromeStorage("MSUserProfile"))["xbAccount"];
+        } catch (e) {
+            MSAuthRetryInProgress = false;
+            return;
+        }
         isNewBind = false;
+        // 自动 rebind 路径：在打开窗口前先标记 reauth 状态，让 Teams 面板立即显示橙色感叹号徽标
+        await saveToChromeStorage("MS_ReauthRequired", true);
     }
     try {
         console.log("M_BindMSAccount[Start]");
@@ -2736,7 +2912,7 @@ async function M_BindMSAccount(xbAccount) {
             await saveToChromeStorage("MS_PanelNeedInit", true);
             await saveToChromeStorage("MS_ReauthRequired", false);
             M_send_comp_msg("MSAccountBinded", null, 0);
-            
+
         } else {
             console.error("M_BindMSAccount[FetchTeamsUserProfile] Error:", userProfile.error);
             M_send_comp_msg("MSAccountBindFailed", userProfile.error+("  [MS]extId:")+chrome.runtime.id, 0);
@@ -2745,6 +2921,8 @@ async function M_BindMSAccount(xbAccount) {
         console.error("M_BindMSAccount Error:", error.message || error);
         await saveToChromeStorage("MS_ReauthRequired", true);
         M_send_comp_msg("MSAccountBindFailed", (error.message || error)+("  [CR]extId:")+chrome.runtime.id, 0);
+    } finally {
+        MSAuthRetryInProgress = false;
     }
 }
 
@@ -3492,7 +3670,7 @@ async function getAccessToken() {
     };
   }
 
-  formDataJSON(name, score, totalscore, id, categoryEName, categoryName, proportion) {
+  formDataJSON(name, score, totalscore, id, categoryEName, categoryName, proportion, gcalcHiddenState) {
     const projectList = this.data.data.evaluationProjectList;
     let targetCategory = projectList.find(p => p.evaluationProjectEName === categoryEName);
 
@@ -3509,10 +3687,15 @@ async function getAccessToken() {
       projectList.push(targetCategory);
     }
 
-    // Protection logic: if score > totalScore, cap the score to totalScore
-    const adjustedScore = Math.min(score, totalscore);
-    if (score > totalscore) {
-      console.warn(`⚠️ Score protection: Assignment "${name}" has score ${score} > totalScore ${totalscore}. Adjusted to ${adjustedScore}.`);
+    // null 分数（批改中-无法计算）跳过 Math.min；正常分数才做保护
+    let adjustedScore;
+    if (score === null || score === undefined) {
+      adjustedScore = null;
+    } else {
+      adjustedScore = Math.min(score, totalscore);
+      if (score > totalscore) {
+        console.warn(`⚠️ Score protection: Assignment "${name}" has score ${score} > totalScore ${totalscore}. Adjusted to ${adjustedScore}.`);
+      }
     }
 
     const newLearningTask = {
@@ -3520,21 +3703,29 @@ async function getAccessToken() {
       "proPath": targetCategory.proPath, "type": 2, "score": adjustedScore, "levelString": "",
       "studentInfoId": 2432662, "disciplineState": null, "classSubjectId": 1575677,
       "name": name, "date": `/Date(${new Date().getTime()}+0800)/`, "totalScore": totalscore,
-      "scoreType": 1, "resultType": 0
+      "scoreType": 1, "resultType": 0,
+      "gcalcHiddenState": gcalcHiddenState || null
     };
-    
+
     // Prevent adding duplicate tasks if the function is run multiple times
     if (!targetCategory.learningTaskAndExamList.some(task => task.id === id)) {
       targetCategory.learningTaskAndExamList.push(newLearningTask);
     }
 
-    const totalScoreOfTasks = targetCategory.learningTaskAndExamList.reduce((sum, task) => sum + (task.score/task.totalScore)*100, 0);
-    const averageScore = totalScoreOfTasks / targetCategory.learningTaskAndExamList.length;
-    targetCategory.score = parseFloat(averageScore.toFixed(2));
-    targetCategory.scoreIsNull = false;
+    // 计算 category 平均分时跳过 null 分数（批改中-无法计算）
+    const scoredTasks = targetCategory.learningTaskAndExamList.filter(t => t.score !== null && t.score !== undefined);
+    if (scoredTasks.length > 0) {
+      const totalScoreOfTasks = scoredTasks.reduce((sum, task) => sum + (task.score/task.totalScore)*100, 0);
+      const averageScore = totalScoreOfTasks / scoredTasks.length;
+      targetCategory.score = parseFloat(averageScore.toFixed(2));
+      targetCategory.scoreIsNull = false;
+    } else {
+      targetCategory.score = 0;
+      targetCategory.scoreIsNull = true;
+    }
   }
 
-  formDataJSONNested(name, score, totalscore, id, parentCategoryEName, parentCategoryName, parentProportion, childCategoryEName, childCategoryName, childProportion) {
+  formDataJSONNested(name, score, totalscore, id, parentCategoryEName, parentCategoryName, parentProportion, childCategoryEName, childCategoryName, childProportion, gcalcHiddenState) {
     const projectList = this.data.data.evaluationProjectList;
     
     // Find or create parent category
@@ -3567,10 +3758,15 @@ async function getAccessToken() {
       parentCategory.evaluationProjectList.push(childCategory);
     }
 
-    // Protection logic: if score > totalScore, cap the score to totalScore
-    const adjustedScore = Math.min(score, totalscore);
-    if (score > totalscore) {
-      console.warn(`⚠️ Score protection: Assignment "${name}" has score ${score} > totalScore ${totalscore}. Adjusted to ${adjustedScore}.`);
+    // null 分数（批改中-无法计算）跳过 Math.min；正常分数才做保护
+    let adjustedScore;
+    if (score === null || score === undefined) {
+      adjustedScore = null;
+    } else {
+      adjustedScore = Math.min(score, totalscore);
+      if (score > totalscore) {
+        console.warn(`⚠️ Score protection: Assignment "${name}" has score ${score} > totalScore ${totalscore}. Adjusted to ${adjustedScore}.`);
+      }
     }
 
     const newLearningTask = {
@@ -3578,19 +3774,26 @@ async function getAccessToken() {
       "proPath": childCategory.proPath, "type": 2, "score": adjustedScore, "levelString": "",
       "studentInfoId": 2432662, "disciplineState": null, "classSubjectId": 1575677,
       "name": name, "date": `/Date(${new Date().getTime()}+0800)/`, "totalScore": totalscore,
-      "scoreType": 1, "resultType": 0
+      "scoreType": 1, "resultType": 0,
+      "gcalcHiddenState": gcalcHiddenState || null
     };
-    
+
     // Prevent adding duplicate tasks if the function is run multiple times
     if (!childCategory.learningTaskAndExamList.some(task => task.id === id)) {
       childCategory.learningTaskAndExamList.push(newLearningTask);
     }
 
-    // Calculate child category score
-    const totalScoreOfTasks = childCategory.learningTaskAndExamList.reduce((sum, task) => sum + (task.score/task.totalScore)*100, 0);
-    const averageScore = totalScoreOfTasks / childCategory.learningTaskAndExamList.length;
-    childCategory.score = parseFloat(averageScore.toFixed(2));
-    childCategory.scoreIsNull = false;
+    // 计算 child category 平均分时跳过 null 分数（批改中-无法计算）
+    const scoredChildTasks = childCategory.learningTaskAndExamList.filter(t => t.score !== null && t.score !== undefined);
+    if (scoredChildTasks.length > 0) {
+      const totalScoreOfTasks = scoredChildTasks.reduce((sum, task) => sum + (task.score/task.totalScore)*100, 0);
+      const averageScore = totalScoreOfTasks / scoredChildTasks.length;
+      childCategory.score = parseFloat(averageScore.toFixed(2));
+      childCategory.scoreIsNull = false;
+    } else {
+      childCategory.score = 0;
+      childCategory.scoreIsNull = true;
+    }
 
     // Calculate parent category score based on children
     if (parentCategory.evaluationProjectList.length > 0) {
@@ -3633,12 +3836,18 @@ async function getAccessToken() {
  * @param {string} endDate - The end date in 'YYYY-MM-DD' format.
  * @returns {Promise<object|null>} A Promise resolving to an object with the final score, or null on error.
  */
-async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,classId) {
+// installRedirectRule:
+//   true  -> 同时安装 declarativeNetRequest 重定向（V1 兜底真正应用到页面时使用）
+//   false -> 仅返回数据，不动网络规则（预测面板等"只想用一下数据"的场景）
+async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate, classId, installRedirectRule = true) {
   const scoreDataManager = new ScoreData();
+  const pendingGradingTasks = [];  // V1 路径下：批改中(无分)任务名收集，用于详情页提示
 
   // Helper function to fetch assignments
   const _fetchAssignments = async () => {
-    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetStatistics?schoolSemesterId=${schoolSemesterId}&subjectId=${subjectId}&learningTaskTypeId=null&beginDate=${beginDate}&endDate=${endDate}&page.pageIndex=1&page.pageSize=500&gcalcSysFetch`;
+    // 用 GetList 而非 GetStatistics——后者会过滤掉"批改中"任务
+    // GetList 返回所有任务（已批改 + 批改中 + 隐藏），各任务再通过 GetDetail + isInSubjectScore 过滤
+    const url = `https://tsinglanstudent.schoolis.cn/api/LearningTask/GetList?semesterId=${schoolSemesterId}&subjectId=${subjectId}&typeId=null&key=&beginTime=${beginDate}&endTime=${endDate}&mode=null&pageIndex=1&pageSize=500&gcalc=gcalc_bg&gcalc=noRedirect`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch assignments: ${response.statusText}`);
     const listData = await response.json();
@@ -3651,11 +3860,32 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
       const detailData = await detailResponse.json();
       const { data } = detailData;
       if (!data?.isInSubjectScore || !data.evaProjects || data.evaProjects.length === 0) continue;
-      
+      // finishState===null 表示任务"已初始化"但既未批改也未发布，不应纳入任何计算/显示
+      if (data.finishState === null || data.finishState === undefined) continue;
+      // 批改中检测：与 onBeforeRequest 的 hidden score 触发条件一致
+      const isInGrading = data.finishState === 1 && data.comment === "" && (data.score === 0 || data.score == null);
+      let scoreToUse = data.score;
+      let hiddenState = null;
+
+      if (isInGrading) {
+          const name = data.learningTaskName || `#${assignment.id}`;
+          if (!pendingGradingTasks.includes(name)) pendingGradingTasks.push(name);
+
+          // 尝试静默计算隐藏分；成功→使用计算值并标记 "calculated"，失败→score=null 并标记 "failed"
+          const computed = await computeHiddenScoreSilent(data.id, data.classId, data.subjectId, schoolSemesterId);
+          if (computed !== null) {
+              scoreToUse = computed;
+              hiddenState = "calculated";
+          } else {
+              scoreToUse = null;
+              hiddenState = "failed";
+          }
+      }
+
       // Handle 2-layer evaProjects hierarchy
       for (const evaProject of data.evaProjects) {
         if (evaProject.proportion === 0 || evaProject.proportion === null || evaProject.proportion === undefined) continue;
-        
+
         // Check if this is a nested project (has parentProId > 0)
         if (evaProject.parentProId > 0) {
           // This is a child project, find its parent
@@ -3663,21 +3893,22 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
           if (parentProject) {
             // Add to nested structure: parent -> child
             scoreDataManager.formDataJSONNested(
-              data.learningTaskName, 
-              data.score, 
-              data.totalScore, 
+              data.learningTaskName,
+              scoreToUse,
+              data.totalScore,
               data.id,
-              parentProject.eName, 
-              parentProject.name, 
+              parentProject.eName,
+              parentProject.name,
               parentProject.proportion,
-              evaProject.eName, 
-              evaProject.name, 
-              evaProject.proportion
+              evaProject.eName,
+              evaProject.name,
+              evaProject.proportion,
+              hiddenState
             );
           }
         } else {
           // This is a top-level project
-          scoreDataManager.formDataJSON(data.learningTaskName, data.score, data.totalScore, data.id, evaProject.eName, evaProject.name, evaProject.proportion);
+          scoreDataManager.formDataJSON(data.learningTaskName, scoreToUse, data.totalScore, data.id, evaProject.eName, evaProject.name, evaProject.proportion, hiddenState);
         }
       }
     }
@@ -3767,30 +3998,35 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
     saveToChromeStorage(`GCV1GradeDetails|${schoolSemesterId}|${subjectId}`, gradeDetails);
     //redirect
 
-    const redirectRule = {
-        id: classId-schoolSemesterId,
-        priority: 1,
-        action: {
-            type: "redirect",
-            redirect: {
-                url: `data:application/json,${encodeURIComponent(JSON.stringify(gradeDetails))}`
+    if (installRedirectRule) {
+        const redirectRule = {
+            id: classId-schoolSemesterId,
+            priority: 1,
+            action: {
+                type: "redirect",
+                redirect: {
+                    url: `data:application/json,${encodeURIComponent(JSON.stringify(gradeDetails))}`
 
+                }
+            },
+            condition: {
+                resourceTypes: ["xmlhttprequest"],
+                urlFilter: `classId=${classId}&subjectId=${subjectId}&semesterId=${schoolSemesterId}`
             }
-        },
-        condition: {
-            resourceTypes: ["xmlhttprequest"],
-            urlFilter: `classId=${classId}&subjectId=${subjectId}&semesterId=${schoolSemesterId}`
-        }
-    };
+        };
 
-    chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: [classId-schoolSemesterId],
-        addRules: [redirectRule]
-    });
+        chrome.declarativeNetRequest.updateDynamicRules({
+            removeRuleIds: [classId-schoolSemesterId],
+            addRules: [redirectRule]
+        });
+    } else {
+        console.log("[getSubjectGrades] installRedirectRule=false — 仅返回数据，不安装重定向规则");
+    }
     return {
       finalWeightedScore: finalWeightedScore,
       totalProportionCovered: totalProportion,
-      gradeDetails: gradeDetails
+      gradeDetails: gradeDetails,
+      pendingGradingTasks: pendingGradingTasks
     };
 
   } catch (error) {
