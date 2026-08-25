@@ -2487,162 +2487,304 @@ async function T_retryTeamsInitAfterAuthFailure() {
     }
 }
 
-// 从chrome.storage.local获取保存的访问令牌，获取用户的课程信息并输出所有作业
-function T_fetchTeamsUserClassesAndAssignments() {
-    getFromChromeStorage("MSTasks").then(tasks => {
-        tasks = tasks || [];
-        const ignoredTasks = tasks.filter(task => task.IgnoredState === 1);
-        chrome.storage.local.get(['MSaccessToken'], function(result) {
-            const accessToken = result.MSaccessToken;
-            if (!accessToken) {
-                console.error('No access token found.');
-                return;
+// ===== Microsoft Graph 请求基础设施：超时 + 重试 + 分页 + 受限并发 =====
+const T_GRAPH_TIMEOUT_MS = 25000;        // 单个 Graph 请求的超时时间
+const T_GRAPH_MAX_RETRIES = 2;           // 瞬时错误（429/5xx/超时）重试次数
+const T_GRAPH_MAX_PAGES = 20;            // @odata.nextLink 分页保护上限
+const T_CLASS_CONCURRENCY = 4;           // 同时拉取的课程数量
+const T_SUBMISSION_CONCURRENCY = 4;      // 单个课程内同时拉取提交状态的数量
+const T_ASSIGNMENT_LOOKBACK_DAYS = 14;   // 只保留最近多少天布置的任务
+
+function T_isAuthError(error) {
+    return !!(error && error.isAuthError);
+}
+
+function T_makeAuthError(status, label) {
+    return { isAuthError: true, status: status, label: label };
+}
+
+// 带超时与重试的 Graph GET。401/403 抛出 {isAuthError:true}，由调用方统一走重新授权。
+async function T_graphFetchJson(url, accessToken, options = {}) {
+    const timeoutMs = options.timeoutMs ?? T_GRAPH_TIMEOUT_MS;
+    const retries = options.retries ?? T_GRAPH_MAX_RETRIES;
+    const label = options.label || url;
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                signal: controller.signal
+            });
+
+            if (response.status === 401 || response.status === 403) {
+                throw T_makeAuthError(response.status, label);
             }
-    
-            fetch('https://graph.microsoft.com/v1.0/education/me/classes', {
-                headers: {
-                    'Authorization': `Bearer ${accessToken}`
+
+            // 429 / 5xx 视为瞬时错误：按 Retry-After 或指数退避重试
+            if (response.status === 429 || response.status >= 500) {
+                const retryAfterSec = Number(response.headers.get('Retry-After'));
+                const waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+                    ? Math.min(retryAfterSec * 1000, 15000)
+                    : Math.min(1000 * Math.pow(2, attempt), 8000);
+                lastError = new Error(`[GraphFetch] ${label} 瞬时失败 ${response.status}`);
+                if (attempt < retries) {
+                    console.warn(`[GraphFetch] ${label} 返回 ${response.status}，${waitMs}ms 后重试 (${attempt + 1}/${retries})`);
+                    await delay(waitMs);
+                    continue;
                 }
-            })
-            .then(response => {
-                if (response.status === 401 || response.status === 403) {
-                    throw { isAuthError: true, status: response.status };
-                }
-                if (!response.ok) {
-                    throw new Error('Failed to fetch user classes');
-                }
-                return response.json();
-            })
-            .then(classesData => {
-                const classes = classesData.value; // 获取课程列表
-                if (!classes || classes.length === 0) {
-                    console.log('No classes found.');
+                throw lastError;
+            }
+
+            if (!response.ok) {
+                throw new Error(`[GraphFetch] ${label} 失败，HTTP ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            if (T_isAuthError(error)) {
+                throw error;
+            }
+            lastError = error;
+            if (attempt < retries) {
+                const waitMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+                const reason = error && error.name === 'AbortError' ? '超时' : '异常';
+                console.warn(`[GraphFetch] ${label} ${reason}，${waitMs}ms 后重试 (${attempt + 1}/${retries})`, error);
+                await delay(waitMs);
+                continue;
+            }
+            throw lastError;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    throw lastError || new Error(`[GraphFetch] ${label} 失败`);
+}
+
+// 跟随 @odata.nextLink 把所有分页数据取全
+async function T_graphFetchAllPages(url, accessToken, options = {}) {
+    const items = [];
+    let nextUrl = url;
+    let page = 0;
+    while (nextUrl && page < T_GRAPH_MAX_PAGES) {
+        const data = await T_graphFetchJson(nextUrl, accessToken, options);
+        if (Array.isArray(data?.value)) {
+            items.push(...data.value);
+        }
+        nextUrl = data?.['@odata.nextLink'] || null;
+        page += 1;
+    }
+    return items;
+}
+
+// 受限并发 map：worker 内抛出的错误会向外传播（用于授权失效时快速失败）
+async function T_mapWithConcurrency(items, limit, worker) {
+    const results = new Array(items.length);
+    let cursor = 0;
+    const workerCount = Math.max(1, Math.min(limit, items.length));
+    const runners = [];
+    for (let i = 0; i < workerCount; i++) {
+        runners.push((async () => {
+            while (true) {
+                const index = cursor++;
+                if (index >= items.length) {
                     return;
                 }
-    
-                let allAssignments = []; // 存储所有课程的作业
-                var MSTaskID = 1016;
-                // 遍历每个课程
-                classes.forEach(classInfo => {
-                    const classId = classInfo.id;
-                    const className = classInfo.displayName;
-                    
-                    fetch(`https://graph.microsoft.com/v1.0/education/classes/${classId}/assignments`, {
-                        headers: {
-                            'Authorization': `Bearer ${accessToken}`
-                        }
-                    })
-                    .then(response => {
-                        if (response.status === 401 || response.status === 403) {
-                            throw { isAuthError: true, status: response.status };
-                        }
-                        if (!response.ok) {
-                            throw new Error(`Failed to fetch assignments for class ${className}`);
-                        }
-                        return response.json();
-                    })
-                    .then(assignmentsData => {
-                        const assignments = assignmentsData.value;
-                        
-                        if (assignments && assignments.length > 0) {
-                            console.log(`Assignments for class: ${className}`);
-    
-                            // 遍历每个 assignment 并创建 assignment 对象
-                            assignments.forEach(assignment => {
-                                //if 
-                                const currentDate = new Date();
-                                const fourteenDaysAgo = new Date();
-                                fourteenDaysAgo.setDate(currentDate.getDate() - 14);
-                                if(new Date(assignment.assignedDateTime)>=fourteenDaysAgo){
-                                    T_getAssignmentSubmissionState(classId, assignment.id, accessToken).then((getsubmissionData) => {
-                                        const submissionData = getsubmissionData || {status: 'unknown', res: ''};
-                                        // Adjust due time: if it's 09:00 (UTC+8), change to 23:59 of the same day (UTC+8)
-                                        let adjustedEndTime = assignment.dueDateTime;
-                                        try {
-                                            const dueUtc = new Date(assignment.dueDateTime);
-                                            if (!isNaN(dueUtc.getTime())) {
-                                                const dueUtcPlus8 = new Date(dueUtc.getTime() + 8 * 60 * 60 * 1000);
-                                                if (dueUtcPlus8.getHours() === 8 && dueUtcPlus8.getMinutes() === 0) {
-                                                    // Set to 23:59:00.000 in UTC+8, then convert back to UTC (Z)
-                                                    dueUtcPlus8.setHours(23, 59, 0, 0);
-                                                    const adjustedUtc = new Date(dueUtcPlus8.getTime() - 8 * 60 * 60 * 1000);
-                                                    adjustedEndTime = adjustedUtc.toISOString();
-                                                }
-                                            }
-                                        } catch (e) {
-                                            console.warn('Failed to adjust due time, using original.', e);
-                                        }
-                                        //if ignoredTasks contains the assignment, set IgnoredState to 1
-                                        if(ignoredTasks.some(task => task.typeName+task.subjectName === assignment.displayName+className)){
-                                            IgnoredState = 1;
-                                        }else{
-                                            IgnoredState = 0;
-                                        }
-                                        const assignmentObj = {
-                                            subjectName: className,
-                                            typeName: assignment.displayName,
-                                            beginTime: assignment.assignedDateTime,
-                                            endTime: adjustedEndTime,
-                                            IgnoredState: IgnoredState,
-                                            id: 'ms'+MSTaskID,
-                                            msId: assignment.id,
-                                            webUrl: assignment.webUrl,
-                                            content: assignment.instructions?.content || '',
-                                            status: submissionData.status || 'unknown',
-                                            submitRes: submissionData.res || '',
-                                            fileRes: assignment.resourcesFolderUrl || ''
-                                        };
-                                        console.log(assignmentObj);
-                                        MSTaskID += 1;
-                                        allAssignments.push(assignmentObj);
-                                    });
-                                    
-                                }
-                                
-                            });
-                        } else {
-                            console.log(`No assignments found for class: ${className}`);
-                        }
-                    })  
-                    .catch(error => {
-                        if (error && error.isAuthError) {
-                            console.warn(`[TeamsFetch] Auth error when fetching assignments for ${className}.`);
-                            T_retryTeamsInitAfterAuthFailure().catch(() => {});
-                        } else {
-                            console.error(`Error fetching assignments for class ${className}:`, error);
-                        }
-                    });
-                });
-    
-                // 使用 setTimeout 确保所有异步操作都完成
-                setTimeout(() => {
-                    // 当前日期
-                    const currentDate = new Date();
-                    // 14天前的日期
-                    const fourteenDaysAgo = new Date();
-                    fourteenDaysAgo.setDate(currentDate.getDate() - 14);
-                
-                    // 过滤和排序作业
-                    const filteredAssignments = allAssignments
-                        .filter(assignment => new Date(assignment.beginTime) >= fourteenDaysAgo ) // 筛选出14天内的任务
-                        .sort((a, b) => new Date(a.beginTime) - new Date(b.beginTime)); // 按开始时间排序
-                
-                    // 将作业列表存入 local storage
-                    saveToChromeStorage("MSTasks", filteredAssignments);
-                    console.log("[FinalTeamsTasks]", filteredAssignments);
-                    M_send_str_msg("MS_finishedAssignmentGet", filteredAssignments,0)
-                }, 2000); // 延迟 2 秒等待所有请求完成
-                
-            })
-            .catch(error => {
-                if (error && error.isAuthError) {
-                    console.warn('[TeamsFetch] Auth error when fetching classes.');
-                    T_retryTeamsInitAfterAuthFailure().catch(() => {});
-                } else {
-                    console.error('Error fetching user classes:', error);
-                }
-            });
-        });
+                results[index] = await worker(items[index], index);
+            }
+        })());
+    }
+    await Promise.all(runners);
+    return results;
+}
+
+// 与旧实现保持一致的截止时间修正逻辑（整点任务顺延到当天 23:59）
+function T_adjustAssignmentDueTime(dueDateTime) {
+    if (!dueDateTime) {
+        return dueDateTime;
+    }
+    try {
+        const dueUtc = new Date(dueDateTime);
+        if (isNaN(dueUtc.getTime())) {
+            return dueDateTime;
+        }
+        const dueUtcPlus8 = new Date(dueUtc.getTime() + 8 * 60 * 60 * 1000);
+        if (dueUtcPlus8.getHours() === 8 && dueUtcPlus8.getMinutes() === 0) {
+            dueUtcPlus8.setHours(23, 59, 0, 0);
+            return new Date(dueUtcPlus8.getTime() - 8 * 60 * 60 * 1000).toISOString();
+        }
+        return dueDateTime;
+    } catch (e) {
+        console.warn('Failed to adjust due time, using original.', e);
+        return dueDateTime;
+    }
+}
+
+// 正在进行中的刷新（用于去重，避免面板反复点击刷新时并发打满 Graph 限流）
+let MSTeamsAssignmentFetchPromise = null;
+
+// 拉取用户的 Teams 课程与作业。
+// 真异步：等所有课程 / 提交状态请求真正完成后才落盘，不再用固定 setTimeout 截断，
+// 因此不会再出现「数据回传太慢被跳过 → 面板显示暂无作业」的情况。
+function T_fetchTeamsUserClassesAndAssignments() {
+    if (MSTeamsAssignmentFetchPromise) {
+        console.log('[TeamsFetch] 已有刷新在进行中，复用当前请求');
+        return MSTeamsAssignmentFetchPromise;
+    }
+
+    let authErrorHit = false;
+    const running = (async () => {
+        try {
+            return await T_runTeamsAssignmentFetch();
+        } catch (error) {
+            if (T_isAuthError(error)) {
+                authErrorHit = true;
+                console.warn('[TeamsFetch] 授权失效，准备重新授权', error);
+            } else {
+                console.error('[TeamsFetch] 拉取 Teams 任务失败', error);
+            }
+            // 失败时回传已有列表：面板能停止转圈，也不会被清空成「暂无作业」
+            const fallback = (await getFromChromeStorage('MSTasks')) || [];
+            M_send_str_msg('MS_finishedAssignmentGet', fallback, 0);
+            return null;
+        }
+    })();
+
+    MSTeamsAssignmentFetchPromise = running;
+    running.finally(() => {
+        MSTeamsAssignmentFetchPromise = null;
+        if (authErrorHit) {
+            // 放在 finally 之后触发，保证重试时去重标记已清除
+            T_retryTeamsInitAfterAuthFailure().catch(() => {});
+        }
+    });
+    return running;
+}
+
+async function T_runTeamsAssignmentFetch() {
+    const previousTasks = (await getFromChromeStorage('MSTasks')) || [];
+    const ignoredKeys = new Set(
+        previousTasks
+            .filter(task => task && task.IgnoredState === 1)
+            .map(task => `${task.typeName}||${task.subjectName}`)
+    );
+
+    const stored = await chrome.storage.local.get(['MSaccessToken']);
+    const accessToken = stored.MSaccessToken;
+    if (!accessToken) {
+        console.error('No access token found.');
+        M_send_str_msg('MS_finishedAssignmentGet', previousTasks, 0);
+        return null;
+    }
+
+    const cutoffMs = Date.now() - T_ASSIGNMENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+
+    const classes = await T_graphFetchAllPages(
+        'https://graph.microsoft.com/v1.0/education/me/classes',
+        accessToken,
+        { label: 'education/me/classes' }
+    );
+
+    if (!classes.length) {
+        console.log('No classes found.');
+        M_send_str_msg('MS_finishedAssignmentGet', previousTasks, 0);
+        return previousTasks;
+    }
+
+    const failedClassNames = [];
+    const perClassResults = await T_mapWithConcurrency(classes, T_CLASS_CONCURRENCY, async (classInfo) => {
+        try {
+            return await T_collectClassAssignments(classInfo, accessToken, cutoffMs, ignoredKeys);
+        } catch (error) {
+            if (T_isAuthError(error)) {
+                throw error; // 授权问题立即中止整轮刷新
+            }
+            console.error(`Error fetching assignments for class ${classInfo?.displayName}:`, error);
+            failedClassNames.push(classInfo?.displayName);
+            return [];
+        }
+    });
+
+    let collected = perClassResults.reduce((acc, list) => acc.concat(list || []), []);
+
+    // 个别课程失败时保留其上一次的数据，避免整张表被清空
+    if (failedClassNames.length) {
+        const failedSet = new Set(failedClassNames);
+        const retained = previousTasks.filter(task => task && failedSet.has(task.subjectName));
+        console.warn(`[TeamsFetch] ${failedClassNames.length} 个课程拉取失败，保留其历史数据 ${retained.length} 条`, failedClassNames);
+        collected = collected.concat(retained);
+    }
+
+    const finalAssignments = collected
+        .filter(assignment => {
+            const beginMs = Date.parse(assignment?.beginTime);
+            return Number.isFinite(beginMs) && beginMs >= cutoffMs;
+        })
+        .sort((a, b) => Date.parse(a.beginTime) - Date.parse(b.beginTime))
+        .map((assignment, index) => ({ ...assignment, id: 'ms' + (1016 + index) }));
+
+    await saveToChromeStorage('MSTasks', finalAssignments);
+    console.log(`[FinalTeamsTasks] 共 ${finalAssignments.length} 条（课程 ${classes.length} 个，失败 ${failedClassNames.length} 个）`, finalAssignments);
+    M_send_str_msg('MS_finishedAssignmentGet', finalAssignments, 0);
+    return finalAssignments;
+}
+
+// 拉取单个课程的作业 + 每条作业的提交状态
+async function T_collectClassAssignments(classInfo, accessToken, cutoffMs, ignoredKeys) {
+    const classId = classInfo.id;
+    const className = classInfo.displayName;
+
+    const assignments = await T_graphFetchAllPages(
+        `https://graph.microsoft.com/v1.0/education/classes/${classId}/assignments`,
+        accessToken,
+        { label: `assignments/${className}` }
+    );
+
+    if (!assignments.length) {
+        console.log(`No assignments found for class: ${className}`);
+        return [];
+    }
+
+    const recentAssignments = assignments.filter(assignment => {
+        const assignedMs = Date.parse(assignment?.assignedDateTime);
+        return Number.isFinite(assignedMs) && assignedMs >= cutoffMs;
+    });
+
+    console.log(`Assignments for class: ${className}（${recentAssignments.length}/${assignments.length} 条在 ${T_ASSIGNMENT_LOOKBACK_DAYS} 天内）`);
+    if (!recentAssignments.length) {
+        return [];
+    }
+
+    return await T_mapWithConcurrency(recentAssignments, T_SUBMISSION_CONCURRENCY, async (assignment) => {
+        let submissionData = { status: 'unknown', res: '' };
+        try {
+            submissionData = (await T_getAssignmentSubmissionState(classId, assignment.id, accessToken)) || submissionData;
+        } catch (error) {
+            if (T_isAuthError(error)) {
+                throw error;
+            }
+            console.warn(`[TeamsFetch] 获取提交状态失败：${className} / ${assignment.displayName}`, error);
+        }
+
+        const ignoreKey = `${assignment.displayName}||${className}`;
+        return {
+            subjectName: className,
+            typeName: assignment.displayName,
+            beginTime: assignment.assignedDateTime,
+            endTime: T_adjustAssignmentDueTime(assignment.dueDateTime),
+            IgnoredState: ignoredKeys.has(ignoreKey) ? 1 : 0,
+            id: '', // 最终排序完成后统一分配，保证 id 稳定
+            msId: assignment.id,
+            webUrl: assignment.webUrl,
+            content: assignment.instructions?.content || '',
+            status: submissionData.status || 'unknown',
+            submitRes: submissionData.res || '',
+            fileRes: assignment.resourcesFolderUrl || ''
+        };
     });
 }
 
@@ -2650,44 +2792,29 @@ async function T_getAssignmentSubmissionState(classId, assignmentId, accessToken
     const url = `https://graph.microsoft.com/v1.0/education/classes/${classId}/assignments/${assignmentId}/submissions`;
 
     try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
+        const data = await T_graphFetchJson(url, accessToken, { label: `submissions/${assignmentId}` });
+        const submissions = Array.isArray(data?.value) ? data.value : [];
+        if (!submissions.length) {
+            return { status: 'working', res: '' };
+        }
+
+        submissions.sort((a, b) => {
+            const timeA = Date.parse(a?.submittedDateTime);
+            const timeB = Date.parse(b?.submittedDateTime);
+            return (Number.isFinite(timeB) ? timeB : 0) - (Number.isFinite(timeA) ? timeA : 0);
         });
 
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-
-        const data = await response.json();
-        const submissions = data.value;
-        if (submissions && submissions.length > 0) {
-            submissions.sort((a, b) => {
-                const dateA = new Date(a.submittedDateTime);
-                const dateB = new Date(b.submittedDateTime);
-                return dateB - dateA;
-            });
-            const latestSubmission = submissions[0];
-            console.log(`Latest Submission ID: ${latestSubmission.id}`);
-            console.log(`Latest Submission State: ${latestSubmission.status}`);
-            return {
-                status: latestSubmission.status=== "working"?"unsubmitted": latestSubmission.status,
-                res: latestSubmission.resourcesFolderUrl
-            };
-        } else {
-            return {
-                status: 'working',
-                res: ''
-            };
-        }
-    } catch (error) {
-        console.error('Error fetching submission state:', error);
+        const latestSubmission = submissions[0];
         return {
-            status: 'error',
-            res: ''
+            status: latestSubmission.status === 'working' ? 'unsubmitted' : latestSubmission.status,
+            res: latestSubmission.resourcesFolderUrl || ''
         };
+    } catch (error) {
+        if (T_isAuthError(error)) {
+            throw error;
+        }
+        console.error('Error fetching submission state:', error);
+        return { status: 'error', res: '' };
     }
 }
 
@@ -4049,8 +4176,8 @@ async function T_startCalenderSync() {
 
 async function T_startTeamsTaskSync() {
     M_send_str_msg("MSPanel_showSyncing",2,-1);
-    T_fetchTeamsUserClassesAndAssignments();
-    await delay(5000);
+    // 等任务真正拉取完成再去写日历，避免用空列表/半截列表做同步
+    await T_fetchTeamsUserClassesAndAssignments();
 	const res = await T_SetAssignmentAlert_MSAssignment();  
 	const payload = {
 		lastSyncTime: new Date().toISOString()

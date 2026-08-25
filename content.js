@@ -161,12 +161,39 @@ if(selectByPrefix===undefined){
     const selectAllByPrefix = (prefix, root = document) =>
         root.querySelectorAll(`[class*="${prefix}"]`);
 }
+// 顶栏模块按钮（我的测评 / 我的任务 / … / 动态成绩）的数量与顺序会随校宝版本变化，
+// 所以一律按集合处理，绝不依赖 childNodes[n] 或 querySelector 的第一个匹配。
+function gcGetTopbarModuleBox() {
+    return document.querySelector('[class*="fe-components-stu-business-topbar-__profileItemBox--"]');
+}
+
+function gcGetTopbarModuleItems() {
+    const box = gcGetTopbarModuleBox();
+    if (!box) return [];
+    return Array.from(box.querySelectorAll('[class*="fe-components-stu-business-topbar-__profileItem--"]'));
+}
+
+// 按文案（中/英）定位顶栏模块按钮，而不是按下标：校宝调整顺序后依然指向同一个模块
+const GC_TOPBAR_MODULE_LABELS = {
+    dynamicScore: ['动态成绩', 'dynamic score', 'realtime score'],
+    task: ['我的任务', 'my task', 'my assignment']
+};
+
+function gcFindTopbarModuleItem(kind) {
+    const labels = GC_TOPBAR_MODULE_LABELS[kind] || [];
+    if (!labels.length) return null;
+    const items = gcGetTopbarModuleItems();
+    for (const item of items) {
+        // innerText 在元素被隐藏时会返回空串，所以回退到 textContent
+        const text = (item.innerText || item.textContent || '').trim().toLowerCase();
+        if (!text) continue;
+        if (labels.some(label => text.includes(label.toLowerCase()))) return item;
+    }
+    return null;
+}
+
 function waitForElement() {
-    let targetElement;
-    try {
-        targetElement = selectByPrefix('fe-components-stu-business-topbar-__profileItemBox').childNodes[8];
-    } catch (error) {}
-    if (targetElement) {
+    if (gcGetTopbarModuleItems().length > 0) {
         setTimeout(function() {
             updateContent();
             modifyPageFooter();
@@ -180,9 +207,6 @@ function waitForElement() {
             hideAseRepeatedly(null,100,1500);
             addBtnBindings();
         }, 100);
-        targetElement.addEventListener('click', function() {
-            startobserveDynamicScoreTarget();
-        });
     } else {
         // If the element is not found yet, try again after a short delay
         setTimeout(waitForElement, 100); // Check every 200 milliseconds
@@ -190,13 +214,22 @@ function waitForElement() {
 }
 
 function addBtnBindings(){
-    document.querySelector('.ng-binding.ng-scope[class*="fe-components-stu-business-topbar-__profileItem"]').addEventListener('click', function() {
-        showTeamsMainPannelBtn();
+    const box = gcGetTopbarModuleBox();
+    if (!box || box._gcModuleNavBound) return;
+    box._gcModuleNavBound = true;
+    // 用事件委托监听整个顶栏模块区：任何模块按钮被点击后 Angular 都会重建视图，
+    // 这里负责让 Teams 按钮重新挂载，并让动态成绩页的观察器重新生效。
+    box.addEventListener('click', function(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        if (!target.closest('[class*="fe-components-stu-business-topbar-__profileItem--"]')) return;
+        // 先尝试把任务列表挂回去：若顶栏点的是当前模块，Angular 不会重渲染，
+        // 恢复后页面才不会停在 Teams 面板上；若会重渲染，这次恢复也无副作用。
+        gcRestoreTaskListView('topbar-nav');
+        startobserveDynamicScoreTarget();
+        setTimeout(showTeamsMainPannelBtn, 300);
+        setTimeout(showTeamsMainPannelBtn, 900);
     });
-    document.querySelector('[class*="fe-components-stu-common-stu-arc-button-__arcbtn"][class*="fe-components-stu-common-stu-arc-button-__current"]').addEventListener('click', function() {
-        document.querySelector('.ng-binding.ng-scope[class*="fe-components-stu-business-topbar-__profileItem"]').click();
-    });
-
 }
 
 if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
@@ -234,13 +267,19 @@ observeUrlChange({
 
 
 
+// 共享同一个已观察集合，避免重复调用时在同一节点上叠加多个 MutationObserver
+const gcDynamicScoreObserved = new Set();
 function startobserveDynamicScoreTarget(){
     observeTarget(
         'fe-components-stu-app-realtime-list-__listItemBox',
-        updateContent
+        updateContent,
+        0,
+        gcDynamicScoreObserved
     );
     observeTarget(`.ng-scope${byClassPrefix('fe-components-stu-app-realtime-list-__item')}${byClassPrefix('fe-components-stu-app-realtime-list-__listItem')}`,
-        updateContent
+        updateContent,
+        0,
+        gcDynamicScoreObserved
     );
 
 }
@@ -3394,7 +3433,19 @@ function showState2DiyScoresBox(smsId,subjectId,subjectName,oriScore){
 
 
 function closeGcalcBox(){
-    queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[5].click();
+    // 关闭自定义成绩册弹窗 = 让「动态成绩」页重新渲染。
+    // 旧实现写死顶栏下标 [5]，校宝调整模块顺序后会跳到别的模块，这里改为按文案定位 + 路由兜底。
+    const dynamicScoreItem = gcFindTopbarModuleItem('dynamicScore');
+    if (dynamicScoreItem) {
+        dynamicScoreItem.click();
+        return;
+    }
+    const realtimeUrl = "https://tsinglanstudent.schoolis.cn/Home#!/realtime/list";
+    if (window.location.href.startsWith(realtimeUrl)) {
+        window.location.reload();
+    } else {
+        window.location.href = realtimeUrl;
+    }
 }
 
 function ribbon_Fireworks(duration_Seconds){
@@ -4491,25 +4542,30 @@ function showTeamsMainPannelBtn(){
     if(document.getElementById("gc_teamsMainBtn")) return;
     const reauthBadgeHtml = `<span id="gc_teamsReauthBadge" title="${tlang('授权过期，点击重新授权','Authorization expired — click to re-authorize')}" style="display:none;width:14px;height:14px;line-height:14px;border-radius:50%;background:#ff8c00;color:#fff;font-size:11px;font-weight:bold;text-align:center;margin-left:4px;vertical-align:middle;font-family:Arial,sans-serif;">!</span>`;
     const btnHtml = `<span class="ng-scope fe-modules-task-__examTabItem--308Eb5U31Pt_Y24rocyVZU" id="gc_teamsMainBtn">
-        <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " style=" margin-right: 10px; " class="${findHashedClass("fe-components-stu-common-stu-arc-button-__arcbtn")}">
+        <stu-arc-button ng-click=" " text=" " is-current=" " class=" "><button ng-class=" " style=" margin-right: 10px; " class="${findHashedClass("fe-components-stu-common-stu-arc-button-__arcbtn") || "fe-components-stu-common-stu-arc-button-__arcbtn"}">
     <span class="ng-binding"><img src="https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/Icon-Teams-28x281?resMode=sharp2&op_usm=1.5,0.65,15,0&qlt=100" style="height: 1em; vertical-align: middle; margin-right: 4px;margin-top:-3px">${tlang(" Teams 面板","Teams Organizer")}${reauthBadgeHtml}</span>
 </button></stu-arc-button>
     </span>`;
 
-    const parentElement = querySelectorStable('.ng-scope.fe-modules-task-__examTab--1ZAmHzjYqG3fNys7mmzbQs');
+    const parentElement = gcGetTaskTabBar();
     if (parentElement) {
         parentElement.insertAdjacentHTML('afterbegin', btnHtml);
-        // 初始读取 reauth 状态来决定 badge 可见性，并监听后续变化
+        // 初始读取 reauth 状态来决定 badge 可见性，并监听后续变化（只注册一次，避免重复插入按钮时叠加监听）
         getFromChromeStorage("MS_ReauthRequired").then(v => updateTeamsReauthBadge(v === true));
-        try {
-            chrome.storage.onChanged.addListener((changes, area) => {
-                if (area === "local" && changes.MS_ReauthRequired) {
-                    updateTeamsReauthBadge(changes.MS_ReauthRequired.newValue === true);
-                }
-            });
-        } catch (e) {}
+        if (!window.gcReauthBadgeWatcherBound) {
+            window.gcReauthBadgeWatcherBound = true;
+            try {
+                chrome.storage.onChanged.addListener((changes, area) => {
+                    if (area === "local" && changes.MS_ReauthRequired) {
+                        updateTeamsReauthBadge(changes.MS_ReauthRequired.newValue === true);
+                    }
+                });
+            } catch (e) {}
+        }
         setTimeout(() => {
-            document.getElementById("gc_teamsMainBtn").addEventListener('click', async function() {
+            const teamsBtn = document.getElementById("gc_teamsMainBtn");
+            if (!teamsBtn) return;
+            teamsBtn.addEventListener('click', async function() {
                 try {
                     const [enabled, profile, refreshToken, panelNeedInit, reauthRequired] = await Promise.all([
                         getFromChromeStorage("MSFeatureEnabled"),
@@ -4549,7 +4605,7 @@ function showTeamsMainPannelBtn(){
                             try { chrome.runtime.sendMessage({ type: 'bp-refreshTeamsTask' }); } catch (e) {}
                         }
 
-                        switchToTeamsPanel();
+                        switchToTeamsPanel({ showRefreshing: !!(shouldRefresh || panelNeedInit) });
 
                         setTimeout(() => {
                             if (profile?.showGuide) {
@@ -4587,38 +4643,258 @@ function showTeamsMainPannelBtn(){
 
 }
 
-function switchToTeamsPanel() {
-    
+// ===== Teams 面板：打开 / 关闭 =====
+// 旧实现用 innerHTML 直接覆盖任务列表 DOM，切回时只能靠「模拟点击顶栏第一个模块按钮」
+// 来强制整页重载；顶栏顺序一变（我的任务不再是第一个）就会跳到我的测评。
+// 新实现把原始 DOM 节点整体摘下来保存（Angular 的 scope / watcher 仍绑在这些节点上），
+// 需要切回时原样挂回，既不依赖按钮下标，也不需要重新加载页面。
+const GC_TEAMS_PANEL_ROOT_ID = 'gc_teamsPanelRoot';
+const GC_ARC_BTN_PREFIX = 'fe-components-stu-common-stu-arc-button-__arcbtn';
+const GC_TAB_ITEM_PREFIX = 'fe-modules-task-__examTabItem';
 
-    document.getElementById("gc_teamsMainBtn").children[0].children[0].style.backgroundColor = "#5B8AF9";
-    document.getElementById("gc_teamsMainBtn").children[0].children[0].style.color = "#FFF";
-    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.backgroundColor = "#FFF";
-    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.borderColor = "#EDEDED";
-    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].style.color = "#737373";
-    //queryAllByClassNames("fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM")[0].remove();
-   
-    queryAllByClassNames("fe-components-stu-common-stu-arc-button-__arcbtn--6h-A7Ng-Fp1GLGqC0irSf fe-components-stu-common-stu-arc-button-__current--1jjVt7kiq6x7Cf3a-lj6Xd")[0].addEventListener('click', function() {
-        queryAllByClassNames("ng-binding ng-scope fe-components-stu-business-topbar-__profileItem--342GOGLPiXlh4W0BfctRIF")[0].click();
-    });
-    getFromChromeStorage("MSUserProfile").then(profile => {
-        queryAllByClassNames("ng-binding fe-components-xb-pagination-__total--3M1T46bD50G4qol-v9NA8i")[0].innerHTML = `${tlang("绑定的Teams账号：","Binded Teams Account:")}
-            <span ng-class=" $ctrl.styles.text" class="ng-binding fe-components-xb-pagination-__text--17ymRnzQ0Vej98kzhssEk-">${profile.email}</span>`
-    });
-    const mainContainer = queryAllByClassNames("fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM")[0];
-    fetch(chrome.runtime.getURL('teamsPanel.html'))
-    .then(response => response.text())
-    .then(html => {
-        mainContainer.innerHTML = html;
-        document.getElementById("gb_teamsPanel_s1_header").children[0].innerText = tlang("任务列表","Teams Assignments");
-        document.getElementById("gb_teamsPanel_s2_header").children[0].innerText = tlang("日程同步","Calender Sync");
-        document.getElementById("teamsGCLogo").src = chrome.runtime.getURL("res/iconBig_teamsAcc.png");
-        getFromChromeStorage("MSTasks").then(tasks => {
-            startTeamsPanel(tasks);
-            
-        });
+const gcTeamsPanelState = {
+    active: false,
+    container: null,
+    savedNodes: null,
+    tabBar: null,
+    accountHintElem: null,
+    globalHandlersBound: false
+};
+
+function gcGetTaskTabBar() {
+    return querySelectorStable('.ng-scope.fe-modules-task-__examTab--1ZAmHzjYqG3fNys7mmzbQs')
+        || document.querySelector('[class*="fe-modules-task-__examTab--"]');
+}
+
+function gcGetTaskMainContainer() {
+    return queryAllByClassNames('fe-components-stu-common-stu-main-__main--1MX7Alx64kpykyOSL7AbFM')[0]
+        || document.querySelector('stu-main [class*="fe-components-stu-common-stu-main-__main--"]')
+        || document.querySelector('[class*="fe-components-stu-common-stu-main-__main--"]');
+}
+
+function gcGetTeamsTabButton() {
+    const wrap = document.getElementById('gc_teamsMainBtn');
+    return wrap ? wrap.querySelector('button') : null;
+}
+
+// 除 Teams 按钮以外的所有 tab 按钮（任务列表 / 任务统计 …），按集合处理不依赖下标
+function gcGetOtherTabButtons() {
+    const tabBar = gcGetTaskTabBar();
+    if (!tabBar) return [];
+    const teamsWrap = document.getElementById('gc_teamsMainBtn');
+    return Array.from(tabBar.querySelectorAll(`button[class*="${GC_ARC_BTN_PREFIX}"]`))
+        .filter(btn => !(teamsWrap && teamsWrap.contains(btn)));
+}
+
+function gcHighlightTeamsTab(active) {
+    const applyStyle = (btn, styles) => {
+        if (!btn) return;
+        if (active) {
+            if (btn.dataset.gcOriginalStyle === undefined) {
+                btn.dataset.gcOriginalStyle = btn.style.cssText;
+            }
+            Object.assign(btn.style, styles);
+        } else if (btn.dataset.gcOriginalStyle !== undefined) {
+            btn.style.cssText = btn.dataset.gcOriginalStyle;
+            delete btn.dataset.gcOriginalStyle;
+        }
+    };
+
+    applyStyle(gcGetTeamsTabButton(), { backgroundColor: '#5B8AF9', color: '#FFF', borderColor: '#5B8AF9' });
+    gcGetOtherTabButtons().forEach(btn => {
+        applyStyle(btn, { backgroundColor: '#FFF', borderColor: '#EDEDED', color: '#737373' });
     });
 }
+
+function gcIsTeamsPanelOpen() {
+    return gcTeamsPanelState.active
+        && !!gcTeamsPanelState.container
+        && gcTeamsPanelState.container.isConnected
+        && !!document.getElementById(GC_TEAMS_PANEL_ROOT_ID);
+}
+
+// 点击 tab 栏里任何非 Teams 的按钮时先把原始 DOM 挂回去，再让 Angular 的 ng-click 正常执行：
+// 「任务列表」= 当前 state（Angular 不会重渲染）→ 靠恢复的 DOM 显示；
+// 「任务统计」= 切换 state → Angular 自己重建视图。
+function gcOnTabBarClickCapture(event) {
+    if (!gcTeamsPanelState.active) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const teamsWrap = document.getElementById('gc_teamsMainBtn');
+    if (teamsWrap && teamsWrap.contains(target)) return;
+    const hitTab = target.closest(`[class*="${GC_ARC_BTN_PREFIX}"]`) || target.closest(`[class*="${GC_TAB_ITEM_PREFIX}"]`);
+    if (!hitTab) return;
+    gcRestoreTaskListView('tab-click');
+}
+
+function gcOnHashChangeWhilePanelOpen() {
+    if (gcTeamsPanelState.active) {
+        // 路由变化后 Angular 会重建视图，保存的节点已失效，直接丢弃状态
+        gcMarkTeamsPanelDetached('hashchange');
+    }
+}
+
+function gcBindTeamsPanelGlobalHandlers() {
+    if (!gcTeamsPanelState.globalHandlersBound) {
+        window.addEventListener('hashchange', gcOnHashChangeWhilePanelOpen);
+        gcTeamsPanelState.globalHandlersBound = true;
+    }
+    const tabBar = gcGetTaskTabBar();
+    if (tabBar && gcTeamsPanelState.tabBar !== tabBar) {
+        if (gcTeamsPanelState.tabBar) {
+            gcTeamsPanelState.tabBar.removeEventListener('click', gcOnTabBarClickCapture, true);
+        }
+        tabBar.addEventListener('click', gcOnTabBarClickCapture, true);
+        gcTeamsPanelState.tabBar = tabBar;
+    }
+}
+
+function gcRestoreBoundAccountHint() {
+    const elem = gcTeamsPanelState.accountHintElem;
+    gcTeamsPanelState.accountHintElem = null;
+    if (!elem || elem.dataset.gcOriginalHtml === undefined) return;
+    try {
+        elem.innerHTML = elem.dataset.gcOriginalHtml;
+    } catch (e) {}
+    delete elem.dataset.gcOriginalHtml;
+}
+
+// 面板所在视图已被 Angular 销毁 / 路由已切走：只清状态，不尝试恢复 DOM
+function gcMarkTeamsPanelDetached(reason) {
+    if (!gcTeamsPanelState.active) return;
+    console.log('[TeamsPanel] 面板状态失效：', reason);
+    gcTeamsPanelState.active = false;
+    gcTeamsPanelState.container = null;
+    gcTeamsPanelState.savedNodes = null;
+    gcTeamsPanelState.accountHintElem = null;
+    gcHighlightTeamsTab(false);
+}
+
+function gcRestoreTaskListView(reason) {
+    if (!gcTeamsPanelState.active) return false;
+    const container = gcTeamsPanelState.container;
+    const savedNodes = gcTeamsPanelState.savedNodes;
+    gcTeamsPanelState.active = false;
+    gcTeamsPanelState.container = null;
+    gcTeamsPanelState.savedNodes = null;
+    gcHighlightTeamsTab(false);
+    console.log('[TeamsPanel] 关闭面板并恢复任务列表：', reason);
+
+    if (!container || !container.isConnected || !savedNodes) {
+        // 容器已经被 Angular 重建，无需（也无法）恢复
+        gcTeamsPanelState.accountHintElem = null;
+        return false;
+    }
+
+    try {
+        const panelRoot = container.querySelector('#' + GC_TEAMS_PANEL_ROOT_ID);
+        if (panelRoot) panelRoot.remove();
+        while (container.firstChild) container.removeChild(container.firstChild);
+        container.appendChild(savedNodes);
+        gcRestoreBoundAccountHint();
+        return true;
+    } catch (error) {
+        console.error('[TeamsPanel] 恢复任务列表失败，回退为重新加载页面', error);
+        gcTeamsPanelState.accountHintElem = null;
+        try { window.location.reload(); } catch (e) {}
+        return false;
+    }
+}
+
+function gcMarkPanelRefreshing(shouldShow) {
+    if (!shouldShow) return;
+    try {
+        if (typeof window.gcStartRefreshUI === 'function') window.gcStartRefreshUI();
+    } catch (e) {}
+}
+
+function switchToTeamsPanel(options = {}) {
+    const teamsBtnWrap = document.getElementById('gc_teamsMainBtn');
+    if (!teamsBtnWrap) {
+        console.warn('[TeamsPanel] 未找到 Teams 按钮，取消打开面板');
+        return;
+    }
+    const mainContainer = gcGetTaskMainContainer();
+    if (!mainContainer) {
+        console.warn('[TeamsPanel] 未找到任务列表容器，取消打开面板');
+        return;
+    }
+
+    // 已经打开：只重新填充数据，不重复替换 DOM（否则会把面板自身存成 savedNodes）
+    if (gcIsTeamsPanelOpen() && gcTeamsPanelState.container === mainContainer) {
+        gcHighlightTeamsTab(true);
+        getFromChromeStorage('MSTasks').then(tasks => {
+            startTeamsPanel(tasks || []);
+            gcMarkPanelRefreshing(options.showRefreshing);
+        });
+        return;
+    }
+
+    // 若状态残留但 DOM 已被重建，先清掉旧状态
+    if (gcTeamsPanelState.active) {
+        gcMarkTeamsPanelDetached('reopen');
+    }
+
+    gcHighlightTeamsTab(true);
+
+    // 绑定账号提示（分页栏「共 N 条」的位置），关闭面板时会还原
+    const accountHintElem = queryAllByClassNames('ng-binding fe-components-xb-pagination-__total--3M1T46bD50G4qol-v9NA8i')[0] || null;
+    if (accountHintElem) {
+        if (accountHintElem.dataset.gcOriginalHtml === undefined) {
+            accountHintElem.dataset.gcOriginalHtml = accountHintElem.innerHTML;
+        }
+        gcTeamsPanelState.accountHintElem = accountHintElem;
+        getFromChromeStorage('MSUserProfile').then(profile => {
+            // 该元素若随任务列表一起被摘下（分页栏属于任务列表），就跳过，不做无意义的写入
+            if (!gcTeamsPanelState.active || !accountHintElem.isConnected || !profile || !profile.email) return;
+            accountHintElem.innerHTML = `${tlang("绑定的Teams账号：","Binded Teams Account:")}
+            <span ng-class=" $ctrl.styles.text" class="ng-binding ${findHashedClass("fe-components-xb-pagination-__text") || "fe-components-xb-pagination-__text--17ymRnzQ0Vej98kzhssEk-"}">${profile.email}</span>`;
+        }).catch(error => console.warn('[TeamsPanel] 读取绑定账号失败', error));
+    }
+
+    // 摘下原始节点（保留引用，Angular 绑定不受影响）
+    const savedNodes = document.createDocumentFragment();
+    while (mainContainer.firstChild) {
+        savedNodes.appendChild(mainContainer.firstChild);
+    }
+
+    const panelRoot = document.createElement('div');
+    panelRoot.id = GC_TEAMS_PANEL_ROOT_ID;
+    mainContainer.appendChild(panelRoot);
+
+    gcTeamsPanelState.active = true;
+    gcTeamsPanelState.container = mainContainer;
+    gcTeamsPanelState.savedNodes = savedNodes;
+    gcBindTeamsPanelGlobalHandlers();
+
+    fetch(chrome.runtime.getURL('teamsPanel.html'))
+        .then(response => response.text())
+        .then(html => {
+            if (!gcTeamsPanelState.active || !panelRoot.isConnected) return false;
+            panelRoot.innerHTML = html;
+            const s1 = document.getElementById("gb_teamsPanel_s1_header");
+            if (s1 && s1.children[0]) s1.children[0].innerText = tlang("任务列表","Teams Assignments");
+            const s2 = document.getElementById("gb_teamsPanel_s2_header");
+            if (s2 && s2.children[0]) s2.children[0].innerText = tlang("日程同步","Calender Sync");
+            const logo = document.getElementById("teamsGCLogo");
+            if (logo) logo.src = chrome.runtime.getURL("res/iconBig_teamsAcc.png");
+            return getFromChromeStorage("MSTasks");
+        })
+        .then(tasks => {
+            if (tasks === false) return; // 面板已被关闭 / 视图已重建
+            startTeamsPanel(tasks || []);
+            // 打开面板时若同时触发了后台刷新，这里让刷新图标转起来，
+            // 等 MS_finishedAssignmentGet 回来重绘列表时自动停止
+            gcMarkPanelRefreshing(options.showRefreshing);
+        })
+        .catch(error => {
+            console.error('[TeamsPanel] 面板加载失败', error);
+            gcRestoreTaskListView('load-failed');
+        });
+}
 async function updateSyncPanels(panelId){ 
+    // 面板未渲染（例如后台同步消息先到）时直接跳过，避免访问不存在的节点报错
+    if (!document.getElementById(`sync${panelId}Title`)) return;
     let lastSyncData = null;
     let syncCont = null;
     switch(panelId){
@@ -4646,7 +4922,8 @@ async function updateSyncPanels(panelId){
             document.getElementById("sync4Content").style.cursor = "pointer";
     }
     if (lastSyncData==null){
-        document.getElementById(syncCont).innerText = tlang("未同步","Not Synced");
+        const emptyElem = syncCont ? document.getElementById(syncCont) : null;
+        if (emptyElem) emptyElem.innerText = tlang("未同步","Not Synced");
         return;
     }
     let sync1Tip = tlang("上次同步时间：","Last Sync Time:") +
@@ -4666,7 +4943,8 @@ async function updateSyncPanels(panelId){
             })()
             : ""
         );
-    document.getElementById(syncCont).innerText = sync1Tip;
+    const syncContElem = syncCont ? document.getElementById(syncCont) : null;
+    if (syncContElem) syncContElem.innerText = sync1Tip;
 }
 
 function formatISOString(isoString) {
@@ -4680,7 +4958,13 @@ function formatISOString(isoString) {
     return `${yyyy}-${mm}-${dd}`;
 }
 function startTeamsPanel(tasks){
+    tasks = Array.isArray(tasks) ? tasks : [];
     console.log("startTeamsPanel",tasks);
+    // 面板没打开时（例如后台刷新完成的消息先到）不渲染，等下次打开面板再从存储读取
+    if (!document.getElementById('assignmentsList')) {
+        console.log("[TeamsPanel] 面板未渲染，跳过本次列表刷新");
+        return;
+    }
     let assignmentsData = [];
     
     setTimeout(() => {
