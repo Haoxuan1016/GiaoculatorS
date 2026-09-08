@@ -9,19 +9,24 @@ document.getElementById('btn-read').addEventListener('click', function(){
 });
 
 function initSettings(){
-    const homeSrc = "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CNN";
-    const user_preference = {
-        calcRange: 1,
-        homeSrc: homeSrc,
-        autoHide: true,
-        advLogPage: true,
-        advScoreShadow: false,
-        autologNtw: 0,
-        homeSrcDark: "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN",
-        homeDarkMode: 1,
-        autoHide_Condition: 70
-    };
-    chrome.storage.local.set({ user_preference: user_preference });
+    chrome.storage.local.get('user_preference', function(data) {
+        if (data.user_preference) {
+            return;
+        }
+        const homeSrc = "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CNN";
+        const user_preference = {
+            calcRange: 1,
+            homeSrc: homeSrc,
+            autoHide: true,
+            advLogPage: true,
+            advScoreShadow: false,
+            autologNtw: 0,
+            homeSrcDark: "https://bing.biturl.top/?resolution=3840&format=image&index=0&mkt=zh-CN",
+            homeDarkMode: 1,
+            autoHide_Condition: 70
+        };
+        chrome.storage.local.set({ user_preference: user_preference });
+    });
 }
 
 

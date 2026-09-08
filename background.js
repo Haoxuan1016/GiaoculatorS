@@ -81,10 +81,8 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【主页美化】修复了背景图/视频不生效的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【批改分计算】修复了部分情况下显示异常的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【自定义分数】修复了该功能无法正常使用的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】修复了部分情况下频繁弹窗的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】修复了获取任务有概率失败的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【安装欢迎页】修复了Chrome更新或电脑重启后可能重复弹出的问题</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -92,25 +90,32 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Homepage UI】Fixed background image/video not loading properly</p>
-<p style="margin-bottom: 2px; margin-top: 2px;">· 【Score Calc】Fixed display issues in certain cases</p>
-<p style="margin-bottom: 2px; margin-top: 2px;">· 【Custom Score】Fixed the feature not working properly</p>
-<p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】Fixed frequent pop-ups in some cases</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】Fixed intermittent failures when fetching assignments</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Welcome Page】Fixed the welcome page reappearing after Chrome updates or computer restarts</p>
 
     </div>
     
     `)
         
         saveToChromeStorage("updateMsg", updatedMsg);
-        
-        
+        return;
     }
-    else{
+
+    // chrome_update / shared_module_update also fire onInstalled.
+    // Only a real first install should open the welcome page.
+    if (details.reason !== "install") {
+        return;
+    }
+
+    chrome.storage.local.get(["user_preference", "enable_state"], function(data) {
+        if (data.user_preference || data.enable_state !== undefined) {
+            return;
+        }
         chrome.storage.local.set({enable_state: true});
         chrome.tabs.create({
           url: chrome.runtime.getURL("welcome.html")
         });
-    }
+    });
 
 });
 
