@@ -2521,7 +2521,9 @@ async function T_graphFetchJson(url, accessToken, options = {}) {
         try {
             const response = await fetch(url, {
                 method: 'GET',
-                headers: { 'Authorization': `Bearer ${accessToken}` },
+                headers: Object.assign({}, options.headers || {}, {
+                    'Authorization': `Bearer ${accessToken}`
+                }),
                 signal: controller.signal
             });
 
@@ -3353,6 +3355,173 @@ async function T_batchAddToMSCalender(events, accessToken) {
 	return { amountOfSuccess: overallSuccess, amountOfFailed: overallFailed };
 }
 
+const T_CLASS_SYNC_CATEGORY = 'GCalcAutoSync_Class';
+const T_CLASS_SYNC_GCMARK_RE = /gcMark\{([^}]+)\}/;
+
+function T_extractGcMarkFromEvent(event) {
+	const blobs = [
+		event?.body?.content,
+		event?.bodyPreview,
+		typeof event?.body === 'string' ? event.body : ''
+	];
+	for (const blob of blobs) {
+		if (!blob || typeof blob !== 'string') {
+			continue;
+		}
+		const normalized = blob
+			.replace(/&#123;/g, '{')
+			.replace(/&#125;/g, '}');
+		const match = normalized.match(T_CLASS_SYNC_GCMARK_RE);
+		if (match && match[1]) {
+			return match[1];
+		}
+	}
+	return null;
+}
+
+function T_isGCalcClassEvent(event) {
+	if (Array.isArray(event?.categories) && event.categories.includes(T_CLASS_SYNC_CATEGORY)) {
+		return true;
+	}
+	const mark = T_extractGcMarkFromEvent(event);
+	return !!(mark && mark.startsWith(T_CLASS_SYNC_CATEGORY));
+}
+
+function T_graphDateTimeToMs(dtObj) {
+	if (!dtObj || dtObj.dateTime == null) {
+		return NaN;
+	}
+	let raw = String(dtObj.dateTime).trim();
+	if (!raw) {
+		return NaN;
+	}
+	const hasTz = /Z$/i.test(raw) || /[+-]\d{2}:\d{2}$/.test(raw);
+	const tz = dtObj.timeZone || '';
+	if (!hasTz && (tz === 'China Standard Time' || tz === 'Asia/Shanghai')) {
+		raw = raw.replace(/\.\d+$/, '') + '+08:00';
+	}
+	return Date.parse(raw);
+}
+
+function T_minuteKey(ms) {
+	if (!Number.isFinite(ms)) {
+		return '';
+	}
+	return String(Math.round(ms / 60000));
+}
+
+function T_classEventFingerprintFromParts(title, startMs, endMs) {
+	const startKey = T_minuteKey(startMs);
+	const endKey = T_minuteKey(endMs);
+	if (!title || !startKey || !endKey) {
+		return '';
+	}
+	return `${title}|${startKey}|${endKey}`;
+}
+
+function T_classEventFingerprint(event) {
+	return T_classEventFingerprintFromParts(
+		event?.subject || '',
+		T_graphDateTimeToMs(event?.start),
+		T_graphDateTimeToMs(event?.end)
+	);
+}
+
+function T_buildClassGcId(startTime, endTime, className) {
+	return `${T_CLASS_SYNC_CATEGORY}${startTime}${endTime}${className || ''}`;
+}
+
+function T_buildClassSyncSkipIndex(events) {
+	const gcMarks = new Set();
+	const fingerprints = new Set();
+	for (const event of events) {
+		if (!T_isGCalcClassEvent(event)) {
+			continue;
+		}
+		const mark = T_extractGcMarkFromEvent(event);
+		if (mark) {
+			gcMarks.add(mark);
+		}
+		const fingerprint = T_classEventFingerprint(event);
+		if (fingerprint) {
+			fingerprints.add(fingerprint);
+		}
+	}
+	return { gcMarks, fingerprints };
+}
+
+function T_shouldSkipClassEvent(gcId, title, startTime, endTime, skipIndex, beingSynced) {
+	if (gcId && skipIndex.gcMarks.has(gcId)) {
+		return true;
+	}
+	const fingerprint = T_classEventFingerprintFromParts(title, Date.parse(startTime), Date.parse(endTime));
+	if (fingerprint && skipIndex.fingerprints.has(fingerprint)) {
+		return true;
+	}
+	if (gcId && Array.isArray(beingSynced) && beingSynced.includes(gcId)) {
+		return true;
+	}
+	return false;
+}
+
+function T_buildCalendarViewUrl(startDateTime, endDateTime, category) {
+	let url = 'https://graph.microsoft.com/v1.0/me/calendarView'
+		+ `?startDateTime=${encodeURIComponent(startDateTime)}`
+		+ `&endDateTime=${encodeURIComponent(endDateTime)}`
+		+ `&$select=${encodeURIComponent('id,subject,start,end,categories,body,location')}`
+		+ '&$top=100';
+	if (category) {
+		url += `&$filter=${encodeURIComponent(`categories/any(c:c eq '${category}')`)}`;
+	}
+	return url;
+}
+
+async function T_listClassSyncCalendarEvents(accessToken, startDateTime, endDateTime) {
+	const fetchOpts = {
+		label: 'calendarView class sync',
+		headers: {
+			'Prefer': 'outlook.timezone="China Standard Time"'
+		}
+	};
+	// 不在服务端 $filter categories：calendarView 上该过滤偶发空结果/500。
+	// 14 天窗口内先拉全量，再在本地用分类或 gcMark 识别本扩展写入的课。
+	const url = T_buildCalendarViewUrl(startDateTime, endDateTime, null);
+	const items = await T_graphFetchAllPages(url, accessToken, fetchOpts);
+	if (!Array.isArray(items)) {
+		return [];
+	}
+	return items.filter(T_isGCalcClassEvent);
+}
+
+async function T_collapseDuplicateClassEvents(events, accessToken) {
+	if (!Array.isArray(events) || events.length < 2) {
+		return;
+	}
+	const groups = new Map();
+	for (const event of events) {
+		const key = T_extractGcMarkFromEvent(event) || T_classEventFingerprint(event);
+		if (!key || !event?.id) {
+			continue;
+		}
+		const list = groups.get(key) || [];
+		list.push(event);
+		groups.set(key, list);
+	}
+	const extras = [];
+	for (const list of groups.values()) {
+		if (list.length < 2) {
+			continue;
+		}
+		list.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+		extras.push(...list.slice(1));
+	}
+	if (extras.length === 0) {
+		return;
+	}
+	console.log(`[T_CALSYNC] collapsing ${extras.length} duplicate class calendar events`);
+	await batchDeleteEvents(extras, accessToken);
+}
+
 async function T_SyncToTeamsCalender() {
 	let calendershift = 1;
     let calenderAlert = 0;
@@ -3381,17 +3550,19 @@ async function T_SyncToTeamsCalender() {
 					return;
 				}
 				const url = 'https://tsinglanstudent.schoolis.cn/api/Schedule/ListScheduleByParent';
-				const data = (function() {
-					const today = new Date();
-					today.setHours(0, 0, 0, 0);
-					const endDate = new Date(today);
-					endDate.setDate(today.getDate() + 14);
-					const formatDate = (date) => date.toISOString().split('T')[0];
-					return {
-						beginTime: formatDate(today),
-						endTime: formatDate(endDate)
-					};
-				})();
+				const today = new Date();
+				today.setHours(0, 0, 0, 0);
+				const endDate = new Date(today);
+				endDate.setDate(today.getDate() + 14);
+				const formatDate = (date) => date.toISOString().split('T')[0];
+				const data = {
+					beginTime: formatDate(today),
+					endTime: formatDate(endDate)
+				};
+				const graphRangeEnd = new Date(endDate.getTime());
+				graphRangeEnd.setHours(23, 59, 59, 999);
+				const graphStartIso = today.toISOString();
+				const graphEndIso = graphRangeEnd.toISOString();
                                 let beingSynced = await loadBeingSynced();
 				try {
 					const response = await fetch(url, {
@@ -3403,8 +3574,28 @@ async function T_SyncToTeamsCalender() {
 					});
 					if (response.ok) {
 						const responseData = await response.json();
-						const xbEvents = responseData.data;
+						const xbEvents = Array.isArray(responseData.data) ? responseData.data : [];
 						console.log("_____MSCalendar", xbEvents);
+
+						let existingEvents = [];
+						try {
+							existingEvents = await T_listClassSyncCalendarEvents(accessToken, graphStartIso, graphEndIso);
+							console.log(`[T_CALSYNC] found ${existingEvents.length} existing class events in Outlook`);
+						} catch (listError) {
+							console.error("[T_CALSYNC] Failed to list existing calendar events", listError);
+							M_send_str_msg("tip_err", T_isAuthError(listError)
+								? tlang("日历读取失败，请重新绑定微软账号", "Failed to read calendar, please rebind your Microsoft account")
+								: tlang("无法读取Outlook日历，已跳过本次课表同步以免重复创建", "Could not read Outlook calendar; skipped this schedule sync to avoid duplicates"), 0);
+							resolve({ amountOfSuccess: 0, amountOfFailed: 1 });
+							return;
+						}
+						const skipIndex = T_buildClassSyncSkipIndex(existingEvents);
+						try {
+							await T_collapseDuplicateClassEvents(existingEvents, accessToken);
+						} catch (collapseError) {
+							console.error("[T_CALSYNC] Failed to collapse duplicate class events", collapseError);
+						}
+
 						function applyCalendarShift(beginDotNet, endDotNet) {
 							if (calendershift !== 1) {
 								return { begin: beginDotNet, end: endDotNet };
@@ -3423,54 +3614,55 @@ async function T_SyncToTeamsCalender() {
 								return null;
 							};
 							const beginDate = parseMaybeDate(beginDotNet);
-							const endDate = parseMaybeDate(endDotNet);
-							if (!beginDate || !endDate || isNaN(beginDate) || isNaN(endDate)) {
+							const endDateShift = parseMaybeDate(endDotNet);
+							if (!beginDate || !endDateShift || isNaN(beginDate) || isNaN(endDateShift)) {
 								return { begin: beginDotNet, end: endDotNet };
 							}
 							const bH = beginDate.getHours();
 							const bM = beginDate.getMinutes();
-							const eH = endDate.getHours();
-							const eM = endDate.getMinutes();
+							const eH = endDateShift.getHours();
+							const eM = endDateShift.getMinutes();
 							function buildDate(baseDate, hours, minutes) {
 								const d = new Date(baseDate.getTime());
 								d.setHours(hours, minutes, 0, 0);
 								return d;
 							}
 							let newBegin = beginDate;
-							let newEnd = endDate;
+							let newEnd = endDateShift;
 							// Strictly match both begin and end times
 							if (bH === 8 && bM === 25 && eH === 9 && eM === 5) {
 								newBegin = buildDate(beginDate, 8, 0);
-								newEnd = buildDate(endDate, 8, 40);
+								newEnd = buildDate(endDateShift, 8, 40);
 							} else if (bH === 9 && bM === 15 && eH === 9 && eM === 55) {
 								newBegin = buildDate(beginDate, 8, 40);
-								newEnd = buildDate(endDate, 9, 20);
+								newEnd = buildDate(endDateShift, 9, 20);
 							} else if (bH === 12 && bM === 35 && eH === 13 && eM === 15) {
 								newBegin = buildDate(beginDate, 11, 50);
-								newEnd = buildDate(endDate, 12, 30);
+								newEnd = buildDate(endDateShift, 12, 30);
 							}
 							return {
 								begin: convertToXBDate(newBegin.toISOString()),
 								end: convertToXBDate(newEnd.toISOString())
 							};
 						}
-						// 构建 events 数组
+						// 构建 events 数组：Outlook 已有的课（含本机缓存）一律跳过
 						const events = xbEvents.flatMap(classInfo => {
 							const shifted = applyCalendarShift(classInfo.beginTime, classInfo.endTime);
 							const startTime = convertToMSDate(shifted.begin);
 							const endTime = convertToMSDate(shifted.end);
-							let gcId = `GCalcAutoSync_Class${startTime}${endTime}${classInfo.name || ''}`;
-                                                        if (beingSynced.includes(gcId)) {
-                                                                console.log("skip", gcId);
-                                                                return [];
-                                                        }
+							const className = classInfo.name || '';
+							let gcId = T_buildClassGcId(startTime, endTime, className);
+							if (T_shouldSkipClassEvent(gcId, className, startTime, endTime, skipIndex, beingSynced)) {
+								console.log("skip", gcId);
+								return [];
+							}
 							return [{
 								startTime: startTime,
 								endTime: endTime,
 								location: classInfo.playgroundName || '',
-								title: classInfo.name || '',
+								title: className,
 								content: `<div style="font-family: Arial, sans-serif; font-size: 14px; color: #333; padding: 10px;">\n                            <p style=\"margin: 0 0 8px 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("老师", "Teacher")}】 \n                                <span style=\"font-weight: normal;\">\n                                ${classInfo.teacherList.map(t => t.name).join(', ')}\n                                </span>\n                            </p>\n                            <p style=\"margin: 0; font-weight: bold; color: #2c3e50;\">\n                                【${tlang("班级", "Class")}】\n                                <span style=\"font-weight: normal;\">\n                                ${tlang(classInfo.classInfo.className, classInfo.classInfo.classEName)}\n                                </span>\n                            </p>\n                            </div><p style="display:none;font-size: 0; color: transparent;" >gcMark{${gcId}}</p>`,
-								tag: 'GCalcAutoSync_Class',
+								tag: T_CLASS_SYNC_CATEGORY,
                                 reminderMinutesBeforeStart: calenderAlert ? 5 : -1,
 							}];
 						});
@@ -3735,6 +3927,9 @@ async function fetchEventsWithCategory(category, accessToken) {
 
 async function batchDeleteEvents(events, accessToken) {
     // Microsoft Graph batch API 限制每次最多20个请求
+    if (!Array.isArray(events) || events.length === 0) {
+        return;
+    }
     const BATCH_SIZE = 20;
     for (let i = 0; i < events.length; i += BATCH_SIZE) {
         const batch = events.slice(i, i + BATCH_SIZE);
