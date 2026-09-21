@@ -31,7 +31,7 @@
             }, 1000);
             
         
-        } else if (url.startsWith(DynamicScoreDetailUrl)&&(!url.includes("gcalc"))|| url.includes("show=gbdiy")) {
+        } else if (url.startsWith(DynamicScoreDetailUrl) && (!url.includes("gcalc") || url.includes("show=gbdiy"))) {
             setTimeout(() => {
                 //console.log("[Listener] Got:", url);
                 try {
@@ -81,8 +81,9 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】修复了获取任务有概率失败的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【安装欢迎页】修复了Chrome更新或电脑重启后可能重复弹出的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【动态成绩】修复了不刷新进入、切换学期或关闭任务预测后，日期/GPA文案不覆盖，以及「进入任务预测」按钮有时消失的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams日历】修复了课表同步可能重复添加日历事件的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【任务详情】由于教务关闭了获取任务平均分/最高分的接口，该功能可能将不再可用</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -90,8 +91,9 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【TeamsOrganizer】Fixed intermittent failures when fetching assignments</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Welcome Page】Fixed the welcome page reappearing after Chrome updates or computer restarts</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Dynamic Scores】Fixed missing date/GPA overlays and the missing “Enter Prediction” button after in-page navigation, semester switches, or closing prediction</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Calendar】Fixed class schedule sync possibly creating duplicate calendar events</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Task Details】Class average/highest score may no longer be available, because the school closed that API</p>
 
     </div>
     
@@ -1330,13 +1332,15 @@ function M_initDeclaritiveRules() {
     chrome.declarativeNetRequest.updateDynamicRules(
         {
             addRules: [noRedirectRule], // 添加规则
-            removeRuleIds: [1000] // 确保先移除同 ID 的旧规则
+            removeRuleIds: [1000, 1001] // 1001: 旧 POST→data: 规则，POST 无法可靠 redirect
         },
         () => {
         //    console.log("[M_initDeclaritiveRules] High-priority noRedirect rule created.");
         }
     );
 }
+
+M_initDeclaritiveRules();
 
 
 function M_send_comp_msg(msgtype,data,redotimes){
@@ -2142,15 +2146,16 @@ async function C_CalcGPAForSemester(semesterId,gpalist,source) {
         if(subject.subjectScore===null||subject.subjectScore===undefined){
             gpalist[index].gpa=-1;
         }else{
+            const numericScore = Number(subject.subjectScore);
             if(subject.subjectName.includes("Chinese")&&(!subject.subjectName.includes("second langua")&&(!subject.subjectName.includes("evel"))&&(!subject.subjectName.includes("AP")))){
                 if(subject.subjectName.includes("History")||subject.subjectName.includes("Humani")||subject.subjectName.includes("eogra")){
-                    ChineseGPA += (subject.subjectScore*(1/3));
+                    ChineseGPA += (numericScore*(1/3));
                     ChineseWeight += (1/3);
-                    back_CHuScore = subject.subjectScore;
+                    back_CHuScore = numericScore;
                 }else{
-                    ChineseGPA += (subject.subjectScore*(2/3));
+                    ChineseGPA += (numericScore*(2/3));
                     ChineseWeight += (2/3);
-                    back_ChineseScore = subject.subjectScore;
+                    back_ChineseScore = numericScore;
                 }
                 gpalist[index].gpa=-1;
             }else{
@@ -2211,18 +2216,20 @@ async function C_CalcGPAForSemester(semesterId,gpalist,source) {
 
     gpalist = gpalist.filter(item => item.gpa !== -1);
     if(ChineseWeight>0){
+        const chineseAvgScore = Number((ChineseGPA / ChineseWeight).toFixed(1));
+        const chineseGpaVal = ScoreToGPA(chineseAvgScore);
         gpalist.push({
             subjectName: "Chinese Culture",
-            subjectScore: ChineseGPA/ChineseWeight,
-            gpa: ScoreToGPA(ChineseGPA/ChineseWeight.toFixed(2)),
+            subjectScore: chineseAvgScore,
+            gpa: chineseGpaVal,
             weight: 1,
             isWeighted: false,
             chiAdditionalData: {chinese:back_ChineseScore,history:back_CHuScore}
         });
-        nonweightedGPA += ScoreToGPA(ChineseGPA/ChineseWeight);
-        weightedGPA += ScoreToGPA(ChineseGPA/ChineseWeight);
+        nonweightedGPA += chineseGpaVal;
+        weightedGPA += chineseGpaVal;
         totalWeight +=1;
-        console.log("ChineseGPAPushed!",gpalist[gpalist.length]);
+        console.log("ChineseGPAPushed!", gpalist[gpalist.length - 1]);
     }
     
     console.log(totalWeight,weightedGPA,nonweightedGPA);
@@ -2285,29 +2292,33 @@ async function C_CalcGPAForSemester(semesterId,gpalist,source) {
     }
 }
 
-function ScoreToGPA(score) {;
+function ScoreToGPA(score) {
+    const n = Number(score);
+    if (!Number.isFinite(n)) {
+        return 0;
+    }
     const scoreMappingConfigs = [
-      { "minValue": 97, "maxValue": 9999.9, "gpa": 4.3 },
-      { "minValue": 93, "maxValue": 96.9999, "gpa": 4 },
-      { "minValue": 90, "maxValue": 92.9999, "gpa": 3.7 },
-      { "minValue": 87, "maxValue": 89.9999, "gpa": 3.3 },
-      { "minValue": 83, "maxValue": 86.9999, "gpa": 3 },
-      { "minValue": 80, "maxValue": 82.9999, "gpa": 2.7 },
-      { "minValue": 77, "maxValue": 79.9999, "gpa": 2.3 },
-      { "minValue": 73, "maxValue": 76.9999, "gpa": 2 },
-      { "minValue": 70, "maxValue": 72.9999, "gpa": 1.7 },
-      { "minValue": 67, "maxValue": 69.9999, "gpa": 1.3 },
-      { "minValue": 63, "maxValue": 66.9999, "gpa": 1 },
-      { "minValue": 60, "maxValue": 62.9999, "gpa": 0.7 },
-      { "minValue": 0, "maxValue": 59.9999, "gpa": 0 }
+      { "minValue": 97, "gpa": 4.3 },
+      { "minValue": 93, "gpa": 4 },
+      { "minValue": 90, "gpa": 3.7 },
+      { "minValue": 87, "gpa": 3.3 },
+      { "minValue": 83, "gpa": 3 },
+      { "minValue": 80, "gpa": 2.7 },
+      { "minValue": 77, "gpa": 2.3 },
+      { "minValue": 73, "gpa": 2 },
+      { "minValue": 70, "gpa": 1.7 },
+      { "minValue": 67, "gpa": 1.3 },
+      { "minValue": 63, "gpa": 1 },
+      { "minValue": 60, "gpa": 0.7 },
+      { "minValue": 0, "gpa": 0 }
     ];
 
     for (const config of scoreMappingConfigs) {
-      if (score >= config.minValue && score <= config.maxValue) {
+      if (n >= config.minValue) {
         return config.gpa;
       }
     }
-    return 0; 
+    return 0;
 }
 
 function formatNumber(number, decimalPlaces) {

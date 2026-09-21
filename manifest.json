@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Giaoculator S",
-  "version": "1.3.6",
+  "version": "1.3.8",
   "description": "Giaoculator S: Easy GPA calculation for Schoolis.cn. Integrates with Xiaobao and track your progress effortlessly.",
   "options_page": "options.html",
   "background": {
@@ -36,6 +36,12 @@
       "matches": ["https://*.schoolis.cn/*", "*://4.3.2.1/*", "*://view.officeapps.live.com/*"],
       "js": ["content_preload.js","content_instantEdit.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://*.schoolis.cn/*"],
+      "js": ["content_scoreTypeHook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "icons": {

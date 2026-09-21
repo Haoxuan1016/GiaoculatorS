@@ -1,4 +1,4 @@
-﻿let version = "1.3.6";
+﻿let version = "1.3.8";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -196,12 +196,14 @@ function waitForElement() {
     if (gcGetTopbarModuleItems().length > 0) {
         setTimeout(function() {
             updateContent();
+            fun_decorateRealtimeList();
             modifyPageFooter();
             showTeamsMainPannelBtn();
             hideAseRepeatedly(null,100,1500)
         }, 30);
         setTimeout(function() {
             updateContent();
+            fun_decorateRealtimeList();
             showTeamsMainPannelBtn();
             modifyPageFooter();
             hideAseRepeatedly(null,100,1500);
@@ -226,26 +228,10 @@ function addBtnBindings(){
         // 先尝试把任务列表挂回去：若顶栏点的是当前模块，Angular 不会重渲染，
         // 恢复后页面才不会停在 Teams 面板上；若会重渲染，这次恢复也无副作用。
         gcRestoreTaskListView('topbar-nav');
-        startobserveDynamicScoreTarget();
+        fun_decorateRealtimeList();
         setTimeout(showTeamsMainPannelBtn, 300);
         setTimeout(showTeamsMainPannelBtn, 900);
     });
-}
-
-if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
-    waitForElement(); // Start polling immediately
-    setTimeout(function() {
-        if(!document.querySelector('.ng-binding[class*="fe-components-stu-business-login-enter-box-__forgetLink"]')){
-            send_comp_msg("bp-checkOutdatedScore","1",0);
-        }
-
-        
-    }, 100);
-    if(window.location.href.includes("https://tsinglanstudent.schoolis.cn/Home#!/realtime/list")){
-        startobserveDynamicScoreTarget();
-    }
-    
-    
 }
 
 setInterval(function() {
@@ -256,19 +242,129 @@ setInterval(function() {
 
 
 
-observeUrlChange({
-    "https://tsinglanstudent.schoolis.cn/Home#!/realtime/list": startobserveDynamicScoreTarget,
-    "https://tsinglanstudent.schoolis.cn/Home#!/task/list":showTeamsMainPannelBtn
-});
-observeUrlChange({
-    "https://tsinglanstudent.schoolis.cn/Home#!/task/list": startobserveScoreHides
-});
-
-
-
 
 // 共享同一个已观察集合，避免重复调用时在同一节点上叠加多个 MutationObserver
 const gcDynamicScoreObserved = new Set();
+const gcObserveTargetState = new WeakMap();
+let gcDecorateRealtimeGen = 0;
+let gcSemesterSwitchDocBound = false;
+let gcRealtimeListClickBound = false;
+let gcLastRealtimeSubjectId = null;
+let gcSuppressRealtimeObserveUntil = 0;
+
+function fun_suppressRealtimeObserve(ms) {
+    gcSuppressRealtimeObserveUntil = Math.max(gcSuppressRealtimeObserveUntil, Date.now() + ms);
+}
+
+function fun_isRealtimeListPage() {
+    return window.location.href.includes("https://tsinglanstudent.schoolis.cn/Home#!/realtime/list");
+}
+
+function gcGetObserveState(observedClasses) {
+    let state = gcObserveTargetState.get(observedClasses);
+    if (!state) {
+        state = new Map();
+        gcObserveTargetState.set(observedClasses, state);
+    }
+    return state;
+}
+
+function gcDisconnectDynamicScoreObservers() {
+    const state = gcObserveTargetState.get(gcDynamicScoreObserved);
+    if (state) {
+        state.forEach((entry) => {
+            if (entry && entry.debounceTimer) {
+                clearTimeout(entry.debounceTimer);
+            }
+            if (entry && entry.observer) {
+                try { entry.observer.disconnect(); } catch (e) {}
+            }
+        });
+        state.clear();
+    }
+    gcDynamicScoreObserved.clear();
+}
+
+function fun_decorateRealtimeList() {
+    if (!fun_isRealtimeListPage()) {
+        return;
+    }
+    const gen = ++gcDecorateRealtimeGen;
+    [0, 80, 200, 500, 1000].forEach((delay) => {
+        setTimeout(() => {
+            if (gen !== gcDecorateRealtimeGen) return;
+            if (!fun_isRealtimeListPage()) return;
+            updateContent();
+        }, delay);
+    });
+    gcDisconnectDynamicScoreObservers();
+    startobserveDynamicScoreTarget();
+    fun_bindRealtimeSemesterSwitch(0);
+    fun_bindRealtimeListItemClick();
+}
+
+function fun_bindRealtimeSemesterSwitch(redotimes) {
+    if (!fun_isRealtimeListPage()) return;
+    const input = queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0];
+    if (!input) {
+        if ((redotimes || 0) < 8) {
+            setTimeout(() => fun_bindRealtimeSemesterSwitch((redotimes || 0) + 1), 150);
+        }
+        return;
+    }
+    if (!input._gcSemesterBound) {
+        input._gcSemesterBound = true;
+        let lastValue = input.value;
+        const onChange = () => {
+            if (input.value === lastValue) return;
+            lastValue = input.value;
+            fun_decorateRealtimeList();
+        };
+        input.addEventListener("change", onChange);
+        input.addEventListener("input", onChange);
+        const obs = new MutationObserver(onChange);
+        obs.observe(input, { attributes: true, childList: true, characterData: true, subtree: true });
+    }
+    if (!gcSemesterSwitchDocBound) {
+        gcSemesterSwitchDocBound = true;
+        document.addEventListener("click", function (e) {
+            if (!fun_isRealtimeListPage()) return;
+            const t = e.target instanceof Element ? e.target : null;
+            if (!t) return;
+            if (t.closest('[class*="fe-components-xb-pull-btn-__t_overflow"]')) {
+                setTimeout(fun_decorateRealtimeList, 80);
+            }
+        }, true);
+    }
+}
+
+function fun_extractRealtimeSubjectId(root) {
+    if (!root) return null;
+    const gradeNode = querySelectorStable('.fe-components-stu-app-realtime-list-__grade--2wJch67b4uOYNPgwNpRCm8', root)
+        || root.querySelector('[class*="fe-components-stu-app-realtime-list-__grade--"]');
+    if (!gradeNode) return null;
+    const match = (gradeNode.textContent || "").match(/#(\d+)/);
+    return match ? match[1] : null;
+}
+
+function fun_bindRealtimeListItemClick() {
+    if (gcRealtimeListClickBound) return;
+    gcRealtimeListClickBound = true;
+    document.addEventListener("click", function (e) {
+        if (!fun_isRealtimeListPage()) return;
+        const t = e.target instanceof Element ? e.target : null;
+        if (!t) return;
+        const item = t.closest('[class*="fe-components-stu-app-realtime-list-__listItem"]');
+        if (!item) return;
+        const subjectId = fun_extractRealtimeSubjectId(item);
+        if (subjectId) gcLastRealtimeSubjectId = subjectId;
+        const kick = () => fun_ensureRealtimeDetailDecorated(subjectId || gcLastRealtimeSubjectId);
+        setTimeout(kick, 80);
+        setTimeout(kick, 250);
+        setTimeout(kick, 600);
+    }, true);
+}
+
 function startobserveDynamicScoreTarget(){
     observeTarget(
         'fe-components-stu-app-realtime-list-__listItemBox',
@@ -316,48 +412,80 @@ function observeTarget(targetClass, callback, redotimes = 0, observedClasses = n
         return;
     }
 
-    // 如果已经存在触发器，则直接返回
+    const state = gcGetObserveState(observedClasses);
     if (observedClasses.has(selector)) {
-        return;
+        const existing = state.get(selector);
+        if (existing && existing.node && existing.node.isConnected) {
+            return;
+        }
+        if (existing) {
+            if (existing.debounceTimer) clearTimeout(existing.debounceTimer);
+            if (existing.observer) {
+                try { existing.observer.disconnect(); } catch (e) {}
+            }
+            state.delete(selector);
+        }
+        observedClasses.delete(selector);
     }
 
-    // 查找目标节点，仅获取第一个匹配元素
     const targetNode = querySelectorStable(selector);
 
     if (targetNode) {
-        // 创建 MutationObserver
-        const observer = new MutationObserver((mutationsList) => {
-            for (const mutation of mutationsList) {
-                if (mutation.target === targetNode) {
-                    callback(); // 执行回调函数
-                    break;
-                }
+        const entry = { node: targetNode, observer: null, debounceTimer: null };
+        const observer = new MutationObserver(() => {
+            if (Date.now() < gcSuppressRealtimeObserveUntil) {
+                return;
             }
+            if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+            entry.debounceTimer = setTimeout(() => {
+                entry.debounceTimer = null;
+                if (Date.now() < gcSuppressRealtimeObserveUntil) {
+                    return;
+                }
+                callback();
+            }, 50);
         });
 
-        // 开始观察目标节点
         observer.observe(targetNode, {
             childList: true,
             subtree: true,
             characterData: true,
         });
 
-        // 记录为已观察
+        entry.observer = observer;
+        state.set(selector, entry);
         observedClasses.add(selector);
+        callback();
     } else {
-        // 如果未找到目标，重试机制
         if (redotimes < 5) {
             const retryDelay = Math.min(5000, 2 ** redotimes * 130 + 50);
 
             setTimeout(() => {
                 observeTarget(targetClass, callback, redotimes + 1, observedClasses);
             }, retryDelay);
-        } else {
         }
     }
 }
 
+if(window.location.href.includes("https://tsinglanstudent.schoolis.cn")){
+    waitForElement(); // Start polling immediately
+    setTimeout(function() {
+        if(!document.querySelector('.ng-binding[class*="fe-components-stu-business-login-enter-box-__forgetLink"]')){
+            send_comp_msg("bp-checkOutdatedScore","1",0);
+        }
+    }, 100);
+    if(fun_isRealtimeListPage()){
+        fun_decorateRealtimeList();
+    }
+}
 
+observeUrlChange({
+    "https://tsinglanstudent.schoolis.cn/Home#!/realtime/list": fun_decorateRealtimeList,
+    "https://tsinglanstudent.schoolis.cn/Home#!/task/list":showTeamsMainPannelBtn
+});
+observeUrlChange({
+    "https://tsinglanstudent.schoolis.cn/Home#!/task/list": startobserveScoreHides
+});
 
 console.log("Giaoculator is Running");
 
@@ -709,10 +837,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
             }else if (type == "bp-firstInstall"){
                 //do nothing for now
             } else if (type == "bp-observeDynamicScore"){
-                observeTarget(
-                    'fe-components-stu-app-realtime-list-__listItemBox',
-                    updateContent
-                );
+                fun_decorateRealtimeList();
             } else if (type == "MSPanel_showSyncing"){
                 MSShowSyncing(data.cont);
             } else if (type == "bp-fun-addMask"){
@@ -739,10 +864,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
             } else if (type == "bp-refresh-click"){
                 simulateClickRefresh(0);
             } else if (type == "replace_context"){
-                updateContent();
-                setTimeout(() => {
-                    updateContent();
-                }, 100);
+                fun_decorateRealtimeList();
             } else if (type == "sim_login"){
                 if(disable_autologin == false){
                     simulateClickLogin();
@@ -891,7 +1013,6 @@ function editPageText(){
 }
 
 async function showGPATip(){
-    gpaNotClaced();
     let smsId;
     try {
         smsId = await getIdBySemester(queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value);
@@ -945,12 +1066,56 @@ async function beforeshowGPAbox(){
     }
 }
 
+function fun_rewriteRealtimeUpdateTimeNode(target) {
+    if (!target) return;
+    const text = target.innerText;
+    if (text === "首次公布时间：1970-01-01 08:00") {
+        target.innerText = "由Giaoculator计算";
+        return;
+    }
+    if (text === "首次公布时间：2008-10-16 00:00") {
+        target.innerText = "由Giaoculator获取";
+        return;
+    }
+    if (text === "首次公布时间：2008-10-17 00:00" || text === "First Publish Time：2008-10-17 00:00") {
+        target.innerText = tlang("由Giaoculator使用V1方法计算", "Calced Using V1 Method");
+        const parentDiv = target.parentElement;
+        if (parentDiv && !parentDiv._gcV1ClickBound) {
+            parentDiv._gcV1ClickBound = true;
+            parentDiv.addEventListener('click', function () {
+                const subjectId = fun_extractRealtimeSubjectId(parentDiv);
+                const smsInput = queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0];
+                if (!smsInput) return;
+                getIdBySemester(smsInput.value).then(semesterid => {
+                    showGPAcount(0, { smsId: semesterid, subjectId: subjectId });
+                });
+            });
+        }
+        return;
+    }
+    if (text === "First Publish Time：1970-01-01 08:00" || text === "First Publish Time：2008-10-16 00:00") {
+        target.innerText = "Calc by Giaoculator";
+    }
+}
+
+function fun_rewriteRealtimeUpdateTimes() {
+    fun_suppressRealtimeObserve(250);
+    try {
+        const targetElement = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
+        for (let cnt = 0; cnt < targetElement.length; cnt++) {
+            fun_rewriteRealtimeUpdateTimeNode(targetElement[cnt]);
+        }
+    } catch (error) {}
+}
+
 function updateContent() {
+    fun_suppressRealtimeObserve(250);
     showGPATip();
 
     setTimeout(() => {
         var element = queryAllByClassNames("ng-scope fe-components-stu-app-realtime-list-__listItem--3XdXNo9J8YyN2Z4GL0lpGz fe-components-stu-app-realtime-list-__border--28HM0G_CwJuVpXrawp7ETW")[0];
-        if (element) {
+        if (element && !element._gcGpaClickBound) {
+            element._gcGpaClickBound = true;
             element.addEventListener('click', function(event) {
                 if (!element.disabled) { // 检查按钮是否处于禁用状态，如果不是才执行
                     element.disabled = true; // 立即禁用按钮
@@ -970,65 +1135,8 @@ function updateContent() {
     }, 100);
 
     console.log("RUNNING updateContent")
-
-    try {
-        const targetElement = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
-        if (targetElement) { 
-            for (cnt=0;cnt<targetElement.length;cnt++){
-                target = targetElement[cnt];
-                if(target.innerText=="首次公布时间：1970-01-01 08:00"){
-                    target.innerText="由Giaoculator计算"
-                }
-                if(target.innerText=="首次公布时间：2008-10-16 00:00"){
-                    target.innerText="由Giaoculator获取"
-                }
-                if(target.innerText=="首次公布时间：2008-10-17 00:00" || target.innerText=="First Publish Time：2008-10-17 00:00"){
-                    target.innerText=tlang("由Giaoculator使用V1方法计算","Calced Using V1 Method")
-                    //在这里补充
-                    // 监听target的父节点div的点击事件
-                    const parentDiv = target.parentElement;
-                    if (parentDiv) {
-                        parentDiv.addEventListener('click', function () {
-                            // 提取subjectId
-                            const gradeNode = querySelectorStable('.fe-components-stu-app-realtime-list-__grade--2wJch67b4uOYNPgwNpRCm8', parentDiv);
-                            let subjectId = null;
-                            if (gradeNode) {
-                                const text = gradeNode.textContent || '';
-                                const match = text.match(/#(\d+)/);
-                                if (match) {
-                                    subjectId = match[1];
-                                }
-                            }
-                            // 获取学期id并调用showGPAcount
-                            getIdBySemester(queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0].value).then(semesterid => {
-                                showGPAcount(0, { smsId: semesterid, subjectId: subjectId });
-                            });
-                        });
-                    }
-                }
-                if(target.innerText=="First Publish Time：1970-01-01 08:00"){
-                    target.innerText="Calc by Giaoculator"
-                }
-                if(target.innerText=="First Publish Time：2008-10-16 00:00"){
-                    target.innerText="Calc by Giaoculator"
-                }
-            }
-        }
-    } catch (error) {}
-    setTimeout(() => {
-        const targetElement = queryAllByClassNames('ng-binding fe-components-stu-app-realtime-list-__updateTime--3zHR7bQeuvOr3Nr0IlpZGI');
-        if (targetElement) { 
-            for (cnt=0;cnt<targetElement.length;cnt++){
-                target = targetElement[cnt];
-                if(target.innerText=="首次公布时间：1970-01-01 08:00"){
-                    target.innerText="由Giaoculator计算"
-                }
-                if(target.innerText=="First Publish Time：1970-01-01 08:00"){
-                    target.innerText="Calc by Giaoculator"
-                }
-            }
-        }
-    }, 100);
+    fun_rewriteRealtimeUpdateTimes();
+    setTimeout(fun_rewriteRealtimeUpdateTimes, 100);
 }
 
 function hideScores(scorelim) {
@@ -1357,12 +1465,9 @@ function simulateClickRefresh(posChange) {
             }
         } 
         setTimeout(() => { 
-            updateContent();
-            setTimeout(() => { 
-                updateContent();
-            }, 60);
+            fun_decorateRealtimeList();
         }, 25);
-        updateContent();
+        fun_decorateRealtimeList();
     }catch(e){
     }
 }
@@ -1837,34 +1942,29 @@ function diyHomepage(){
 }
 
 
+function fun_setGpaTitle(text) {
+    const el = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0];
+    if (!el || el.innerText === text) {
+        return;
+    }
+    fun_suppressRealtimeObserve(250);
+    el.innerText = text;
+}
+
 function gpaClaced(){
     try {
-        var langSet = (navigator.language || navigator.userLanguage).startsWith('zh') ? 'cn' : 'en';
-        if(langSet == 'cn'){
-            setTimeout(() => {
-                queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA (计算)";
-            }, 20);
-            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA (计算)";
-        }else{
-            setTimeout(() => {
-                queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA (Calced)";
-            }, 20);
-            queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA (Calced)";
-        }
-        
-        
+        const text = (navigator.language || navigator.userLanguage).startsWith('zh') ? "学期GPA (计算)" : "Semester GPA (Calced)";
+        fun_setGpaTitle(text);
+        setTimeout(() => fun_setGpaTitle(text), 20);
     } catch{}
     
 } 
 
 function gpaNotClaced(){
     try {
-    var langSet = (navigator.language || navigator.userLanguage).startsWith('zh') ? 'cn' : 'en';
-    if(langSet != 'cn'){
-        queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "Semester GPA";
-    }else{
-        queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__gpaContentTitle--JYXIB_rCNvSgM5wWcEYdJ")[0].innerText = "学期GPA";
-    }}catch{}
+        const text = (navigator.language || navigator.userLanguage).startsWith('zh') ? "学期GPA" : "Semester GPA";
+        fun_setGpaTitle(text);
+    } catch{}
 }
 
 function ntwLoginMain(){
@@ -2196,6 +2296,55 @@ function directDownloadFile_AddBtn() {
         document.getElementById('gcalcDownloadBtn').remove()
     }
 }
+function fun_findRealtimeScoreList() {
+    const strictRe = /^fe-components-stu-app-realtime-list-__scoreList--[A-Za-z0-9_-]+$/;
+    const candidates = document.querySelectorAll('[class*="fe-components-stu-app-realtime-list-__scoreList"]');
+    for (const el of candidates) {
+        if (!el.isConnected) continue;
+        for (const cls of el.classList) {
+            if (strictRe.test(cls)) return el;
+        }
+    }
+    const fallback = queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0];
+    return (fallback && fallback.isConnected) ? fallback : null;
+}
+
+function fun_isLiveRealtimeOverlay(el) {
+    if (!el || !el.isConnected) return false;
+    const modal = el.closest('[class*="fe-components-stu-app-realtime-list-__xbDialogModalBox"]');
+    if (modal) {
+        const style = window.getComputedStyle(modal);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        return true;
+    }
+    return !!el.closest('[class*="fe-components-stu-app-realtime-list-__scoreList"]');
+}
+
+function fun_pruneStaleRealtimeOverlays() {
+    ["gcalc_gpacntstate", "gcalc_editedNotice", "gcalc_clicktoshowDiyBox", "gcalc_editedNoticeBtn", "gcalc_diyboxbtn", "gcalc_v1WarnLi"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && !fun_isLiveRealtimeOverlay(el)) {
+            try { el.remove(); } catch (e) {}
+        }
+    });
+}
+
+function fun_ensureRealtimeDetailDecorated(subjectId) {
+    if (!fun_isRealtimeListPage()) return;
+    fun_pruneStaleRealtimeOverlays();
+    const scoreList = fun_findRealtimeScoreList();
+    if (!scoreList) return;
+    if (fun_isLiveRealtimeOverlay(document.getElementById("gcalc_gpacntstate"))) return;
+    if (fun_isLiveRealtimeOverlay(document.getElementById("gcalc_editedNotice"))) return;
+
+    updateContent_DetailPage();
+    const smsInput = queryAllByClassNames("fe-components-xb-pull-btn-__input--3TWoIfVMNo-eszvg3cnXCa")[0];
+    if (!smsInput) return;
+    getIdBySemester(smsInput.value).then((semesterid) => {
+        showGPAcount(0, { smsId: semesterid, subjectId: subjectId || gcLastRealtimeSubjectId });
+    });
+}
+
 function hideOriginalShowScoreDetail(smsid, subjectid, subjectname, model){
     const btntext = tlang("进入任务预测","Enter Prediction Mode");
     // 提示语 + 同款"进入任务预测"按钮（直接内联在提示语下方，不依赖 setTimeout 路径中的 addBtnforshowDisScoresBox）
@@ -2206,21 +2355,7 @@ function hideOriginalShowScoreDetail(smsid, subjectid, subjectname, model){
         </div>
     `;
 
-    // 严格匹配 __scoreList--<hash>，排除 __scoreListItem* / __scoreListItemLabel* 等子元素的误匹配
-    let container = null;
-    const strictRe = /^fe-components-stu-app-realtime-list-__scoreList--[A-Za-z0-9_-]+$/;
-    const findContainer = () => {
-        const candidates = document.querySelectorAll('[class*="fe-components-stu-app-realtime-list-__scoreList"]');
-        for (const el of candidates) {
-            for (const cls of el.classList) {
-                if (strictRe.test(cls)) return el;
-            }
-        }
-        // 兜底：旧版精确 class
-        return queryAllByClassNames("fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c")[0] || null;
-    };
-
-    container = findContainer();
+    const container = fun_findRealtimeScoreList();
 
     const _applyNotice = (c) => {
         if (!c) return false;
@@ -2243,8 +2378,8 @@ function hideOriginalShowScoreDetail(smsid, subjectid, subjectname, model){
     const _retry = (n) => {
         if (n <= 0) return;
         setTimeout(() => {
-            if (document.getElementById("gcalc_editedNotice")) return; // 已经显示过
-            const c = findContainer();
+            if (fun_isLiveRealtimeOverlay(document.getElementById("gcalc_editedNotice"))) return;
+            const c = fun_findRealtimeScoreList();
             if (c) _applyNotice(c);
             else _retry(n-1);
         }, 200);
@@ -2254,9 +2389,10 @@ function hideOriginalShowScoreDetail(smsid, subjectid, subjectname, model){
 function showGPAcount(redotimes,data){
     console.log("INShowGPACount")
     try {
+        fun_pruneStaleRealtimeOverlays();
         let showGB = true;
         let GBModel = 0;
-        if(document.getElementById("gcalc_gpacntstate")){
+        if(fun_isLiveRealtimeOverlay(document.getElementById("gcalc_gpacntstate"))){
             return;
         }
         var tiptext;
@@ -2310,12 +2446,12 @@ function showGPAcount(redotimes,data){
         }
         
         let newHtml="<ul id='gcalc_gpacntstate' ng-class='[styles.scoreListItem,commonStyles.clearFix]' class='fe-components-stu-app-realtime-list-__scoreListItem--3G2orCiXa-n9QRjw05Ii8f fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <!-- ngRepeat: items in $ctrl.evaluationProjectList --><!-- end ngRepeat: items in $ctrl.evaluationProjectList --><li ng-repeat='items in $ctrl.evaluationProjectList' class='ng-scope'> <ul ng-class='commonStyles.clearFix' ng-click='toggleChildItem($index)' class='fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB'> <li ng-class='[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]' class='"+ findHashedClass("ng-binding fe-components-stu-app-realtime-list-__scoreListItemLabel") + "' style='font-size:"+tlang(13,11)+"px'>"+tiptext+"</li> <li ng-class='[styles.scoreListItemWeight, styles.scoreListItemScoreWeight]' class='ng-binding fe-components-stu-app-realtime-list-__scoreListItemWeight--285HojRL7boCDLSqVG3jB-'></li> <li ng-class='[styles.scoreListItemScore, styles.scoreListItemScoreWeight]' id='gcalc_diyboxbtn' class='fe-components-stu-app-realtime-list-__scoreListItemScore--1SnqOFUX5PHAR3L-RwXhkl'> <span class='ng-binding'></span> <!-- ngIf: items.evaluationProjectList.length>0 && items.showChild --> <!-- ngIf: items.evaluationProjectList.length>0 && !items.showChild --> </li> </ul> </li></ul>"
-        let targetDiv = querySelectorStable('.fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c');
+        let targetDiv = fun_findRealtimeScoreList() || querySelectorStable('.fe-components-stu-app-realtime-list-__scoreList--3yQylVqARJbNb5r06eJd3c');
         if (targetDiv) {
             targetDiv.insertAdjacentHTML('beforeend', newHtml);
 
         } else {
-            console.log('目标元素未找到。');
+            throw new Error("scoreList not ready");
         }
         // V1 fallback 警告：如果当前科目走了 V1 手动算分，且有"批改中"任务，提示数据可能不准确
         try {
@@ -2330,7 +2466,7 @@ function showGPAcount(redotimes,data){
                 );
                 const warnHtml = `<li ng-repeat="items in $ctrl.evaluationProjectList" class="ng-scope" id="gcalc_v1WarnLi"> <ul ng-class="commonStyles.clearFix" class="fe-shared-css-__clearFix--2mg8N64gHXU6X_nBPlhIaB"> <li ng-class="[styles.scoreListItemLabel, styles.scoreListItemScoreWeight]" class="${labelCls}" style="font-size:${tlang(12,10)}px;color:#ff8c00;font-weight:500;">${warnText}</li> </ul> </li>`;
                 const wrap = document.getElementById("gcalc_gpacntstate");
-                if (wrap && !document.getElementById("gcalc_v1WarnLi")) {
+                if (wrap && fun_isLiveRealtimeOverlay(wrap) && !document.getElementById("gcalc_v1WarnLi")) {
                     wrap.insertAdjacentHTML('beforeend', warnHtml);
                 }
             }).catch(() => {});
@@ -2373,30 +2509,43 @@ function hidestudentInfo(){
 function addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,redotimes){
     // 当 [Edited] 提示语已经占据整个 scoreList 容器时（gcalc_gpacntstate 已被替换），
     // 这条路径不该再加按钮——提示语里已经内联了"进入任务预测"按钮。
-    if (document.getElementById("gcalc_editedNotice")) return;
-    if (!document.getElementById("gcalc_gpacntstate") || !document.getElementById("gcalc_diyboxbtn")) return;
+    if (fun_isLiveRealtimeOverlay(document.getElementById("gcalc_editedNotice"))) return;
+    if (fun_isLiveRealtimeOverlay(document.getElementById("gcalc_clicktoshowDiyBox"))) return;
+    if (!fun_isLiveRealtimeOverlay(document.getElementById("gcalc_gpacntstate")) || !fun_isLiveRealtimeOverlay(document.getElementById("gcalc_diyboxbtn"))) {
+        if ((redotimes || 0) < 15) {
+            setTimeout(() => addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,(redotimes || 0) + 1), 80);
+        }
+        return;
+    }
 
     let btntext = tlang("进入任务预测","Enter Edit Mode")
-    if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
-        btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
-    }
-    let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; margin-top:11px; padding: 4px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
+    try {
+        const isGpaModal = queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA");
+        if(isGpaModal){
+            btntext=tlang("修改权重匹配规则","Edit Weight Matching Rules")
+        }
+        let tmpBtn = `<p id="gcalc_clicktoshowDiyBox" style="font-size: 13px; display: inline-block; margin-top:11px; padding: 4px 11px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">${btntext}</p>`;
 
-
-    document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
-    document.getElementById("gcalc_diyboxbtn").insertAdjacentHTML('beforeend', tmpBtn);
-    if(queryAllByClassNames("ng-binding fe-components-stu-app-realtime-list-__modelTitle--8I6j6U9niNNfZsIj8855i")[0].innerText.includes("GPA")){
-        document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
-            chrome.runtime.sendMessage({
-                type: "openOptionsPage_GPA"
-            });
-        });
-    }else{
-        document.getElementById("gcalc_clicktoshowDiyBox").addEventListener('click', function() {
-        
-            getUsrAssignmentInfoBeforeshowDiyBox(smsid,subjectid,subjectname,model);
-            
-        });
+        document.getElementById("gcalc_gpacntstate").children[0].children[0].children[0].style = "font-size:13px;position: relative;top: 1px;";
+        document.getElementById("gcalc_diyboxbtn").insertAdjacentHTML('beforeend', tmpBtn);
+        const diyBtn = document.getElementById("gcalc_clicktoshowDiyBox");
+        if (diyBtn) {
+            if(isGpaModal){
+                diyBtn.addEventListener('click', function() {
+                    chrome.runtime.sendMessage({
+                        type: "openOptionsPage_GPA"
+                    });
+                });
+            }else{
+                diyBtn.addEventListener('click', function() {
+                    getUsrAssignmentInfoBeforeshowDiyBox(smsid,subjectid,subjectname,model);
+                });
+            }
+        }
+    } catch (e) {
+        if ((redotimes || 0) < 15) {
+            setTimeout(() => addBtnforshowDisScoresBox(smsid,subjectid,subjectname,model,(redotimes || 0) + 1), 80);
+        }
     }
 
     
@@ -3438,6 +3587,7 @@ function closeGcalcBox(){
     const dynamicScoreItem = gcFindTopbarModuleItem('dynamicScore');
     if (dynamicScoreItem) {
         dynamicScoreItem.click();
+        fun_decorateRealtimeList();
         return;
     }
     const realtimeUrl = "https://tsinglanstudent.schoolis.cn/Home#!/realtime/list";
