@@ -2655,6 +2655,288 @@ function sys_showload(state){
     }
 }
 
+function gbHasChildren(item) {
+    return Array.isArray(item?.evaluationProjectList) && item.evaluationProjectList.length > 0;
+}
+
+function gbCateKey(item) {
+    if (!item) return "";
+    if (item.evaluationProjectId !== undefined && item.evaluationProjectId !== null && item.evaluationProjectId !== "") {
+        return "id_" + String(item.evaluationProjectId);
+    }
+    const name = String(item.evaluationProjectEName || item.evaluationProjectName || "cate");
+    return "n_" + name.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function gbWalkCates(list, fn, parent) {
+    if (!Array.isArray(list)) return;
+    for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        fn(item, parent || null);
+        if (gbHasChildren(item)) {
+            gbWalkCates(item.evaluationProjectList, fn, item);
+        }
+    }
+}
+
+function gbFindCate(list, key) {
+    let found = null;
+    gbWalkCates(list, (item) => {
+        if (!found && gbCateKey(item) === String(key)) found = item;
+    });
+    return found;
+}
+
+function gbFindParentOf(list, key) {
+    let parent = null;
+    gbWalkCates(list, (item, p) => {
+        if (!parent && gbCateKey(item) === String(key)) parent = p || null;
+    });
+    return parent;
+}
+
+function gbCountTasks(list) {
+    let n = 0;
+    gbWalkCates(list, (item) => {
+        n += Array.isArray(item.learningTaskAndExamList) ? item.learningTaskAndExamList.length : 0;
+    });
+    return n;
+}
+
+function gbCateMatch(a, b) {
+    if (!a || !b) return false;
+    const aid = a.evaluationProjectId ?? a.id;
+    const bid = b.evaluationProjectId ?? b.id;
+    if (aid != null && bid != null && String(aid) === String(bid)) return true;
+    if (a.evaluationProjectEName && b.evaluationProjectEName && a.evaluationProjectEName === b.evaluationProjectEName) return true;
+    if (a.evaluationProjectName && b.evaluationProjectName && a.evaluationProjectName === b.evaluationProjectName) return true;
+    return false;
+}
+
+function gbCollectDescendantTaskIds(item, ids) {
+    const out = ids || new Set();
+    if (!Array.isArray(item?.evaluationProjectList)) return out;
+    item.evaluationProjectList.forEach((child) => {
+        if (Array.isArray(child.learningTaskAndExamList)) {
+            child.learningTaskAndExamList.forEach((t) => {
+                if (t && t.id != null) out.add(t.id);
+            });
+        }
+        gbCollectDescendantTaskIds(child, out);
+    });
+    return out;
+}
+
+function gbStripDuplicatedParentTasks(item) {
+    if (!item || !gbHasChildren(item) || !Array.isArray(item.learningTaskAndExamList)) return;
+    const childIds = gbCollectDescendantTaskIds(item, new Set());
+    item.learningTaskAndExamList = item.learningTaskAndExamList.filter((t) => t && !childIds.has(t.id));
+}
+
+function gbMergeV1IntoV2(v2List, v1List) {
+    if (!Array.isArray(v2List)) return Array.isArray(v1List) ? v1List : [];
+    if (!Array.isArray(v1List) || v1List.length === 0) return v2List;
+    return v2List.map((v2p) => {
+        const v1Match = v1List.find((v1p) => gbCateMatch(v2p, v1p));
+        const merged = Object.assign({}, v2p);
+        const v2Tasks = Array.isArray(v2p.learningTaskAndExamList) ? v2p.learningTaskAndExamList : [];
+        const v1Tasks = v1Match && Array.isArray(v1Match.learningTaskAndExamList) ? v1Match.learningTaskAndExamList : [];
+        const v2Kids = Array.isArray(v2p.evaluationProjectList) ? v2p.evaluationProjectList : [];
+        const v1Kids = v1Match && Array.isArray(v1Match.evaluationProjectList) ? v1Match.evaluationProjectList : [];
+        if (v2Kids.length > 0) {
+            merged.evaluationProjectList = gbMergeV1IntoV2(v2Kids, v1Kids);
+            merged.learningTaskAndExamList = v2Tasks;
+        } else if (v1Kids.length > 0) {
+            merged.evaluationProjectList = v1Kids;
+            merged.learningTaskAndExamList = v2Tasks.length > 0 ? v2Tasks : [];
+        } else {
+            merged.learningTaskAndExamList = v2Tasks.length > 0 ? v2Tasks : v1Tasks;
+        }
+        gbStripDuplicatedParentTasks(merged);
+        return merged;
+    });
+}
+
+function gbRemoveTaskById(list, targetId) {
+    if (!Array.isArray(list)) return false;
+    for (let i = 0; i < list.length; i++) {
+        const project = list[i];
+        if (Array.isArray(project.learningTaskAndExamList)) {
+            const idx = project.learningTaskAndExamList.findIndex((t) => t.id === targetId);
+            if (idx !== -1) {
+                project.learningTaskAndExamList.splice(idx, 1);
+                return true;
+            }
+        }
+        if (gbHasChildren(project) && gbRemoveTaskById(project.evaluationProjectList, targetId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function gbGetTaskRows(cataKey) {
+    const lb = document.getElementById("gb_listbox");
+    if (!lb) return [];
+    return Array.from(lb.querySelectorAll("[data-cata-key]")).filter(
+        (el) => el.getAttribute("data-cata-key") === String(cataKey)
+    );
+}
+
+function gbSetCateScore(key, score) {
+    const el = document.getElementById(key + "_score");
+    if (!el) return;
+    if (score === null || score === undefined || score === "" || isNaN(parseFloat(score)) || parseFloat(score) < 0) {
+        el.textContent = "-% / -";
+        el.setAttribute("scoreValue", null);
+        return;
+    }
+    const n = parseFloat(score);
+    el.textContent = `${n.toFixed(1)}% / ${scoreToLevel(n)}`;
+    el.setAttribute("scoreValue", n);
+}
+
+function gbRefreshParentScore(parentItem) {
+    if (!parentItem || !gbHasChildren(parentItem)) return;
+    let totalScore = 0;
+    let totalWeight = 0;
+    parentItem.evaluationProjectList.forEach((child) => {
+        const s = gcParseCateScore(gbCateKey(child));
+        const prop = parseFloat(child.proportion);
+        if (s !== null && !isNaN(prop) && prop > 0) {
+            totalScore += s * prop;
+            totalWeight += prop;
+        }
+    });
+    if (totalWeight > 0) gbSetCateScore(gbCateKey(parentItem), totalScore / totalWeight);
+    else gbSetCateScore(gbCateKey(parentItem), null);
+}
+
+function gbExpandCate(key) {
+    const childWrap = document.getElementById("gb_children_" + key);
+    const taskWrap = document.getElementById("gb_tasks_" + key);
+    if (childWrap) childWrap.style.display = "";
+    if (taskWrap) taskWrap.style.display = "";
+    const arrow = document.getElementById("gbArrow_" + key);
+    if (arrow) arrow.innerHTML = "&#9660;";
+}
+
+function gbPulseCate(key, improved) {
+    const scoreElement = document.getElementById(key + "_score");
+    const divElement = document.getElementById(key + "_div");
+    if (scoreElement) {
+        scoreElement.style.transition = "transform 0.3s ease-in-out";
+        scoreElement.style.transform = "scale(1.5)";
+        setTimeout(() => { scoreElement.style.transform = "scale(1)"; }, 300);
+    }
+    if (divElement) {
+        const orig = divElement.getAttribute("data-gb-bg") || "rgba(255, 246, 203, 0.85)";
+        divElement.style.transition = "background-color 0.5s ease-in-out";
+        divElement.style.backgroundColor = improved ? "rgb(30, 244, 137)" : "rgba(235, 144, 144, 0.85)";
+        setTimeout(() => {
+            divElement.style.backgroundColor = orig;
+        }, 500);
+    }
+}
+
+function gbAfterLeafScoreChange(assignmentList, leafKey) {
+    const parent = gbFindParentOf(assignmentList, leafKey);
+    if (parent) gbRefreshParentScore(parent);
+}
+
+function gbTaskRowHtml(taskitem, cataKey, indent, titleOverride) {
+    let tmpicon = "";
+    if (taskitem?.fromGCalc) {
+        tmpicon = `<img src="${chrome.runtime.getURL("icon.png")}" style="width:15.5px; height:15.5px; vertical-align: middle; margin-top:-2px; margin-right: 6px;" />`;
+    } else {
+        tmpicon = `<img src="https://cdn.schoolis.cn/sis/favicon/sis.ico" style="width:16px; height:16px; vertical-align: middle; margin-right: 6px;" />`;
+    }
+    const isHiddenCalc = taskitem.gcalcHiddenState === "calculated";
+    const hiddenLabel = isHiddenCalc
+        ? ` <span style="color:#888;font-size:11px;">(${tlang("批改中-计算","Grading-Calc")})</span>`
+        : "";
+    const visScoreVal = (taskitem.score !== null && taskitem.score !== undefined)
+        ? (taskitem.score / taskitem.totalScore * 100)
+        : "";
+    const scoreDisplay = (taskitem.score === null || taskitem.score === undefined)
+        ? "-&nbsp;"
+        : (taskitem.score / taskitem.totalScore * 100).toFixed(1) + "%";
+    const pad = "&nbsp;".repeat(6 + (indent || 0) * 4);
+    const detailTitle = titleOverride || `${tlang("详细","Details")}: ${taskitem.score}/${taskitem.totalScore}`;
+    return `
+        <div data-cata-key="${cataKey}" data-vis-score="${visScoreVal}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
+        <span title="${taskitem.name || ""}" style="flex: 2; text-align: left;">
+            ${pad}
+            ${tmpicon}
+            &nbsp;&nbsp;${limitBytes(taskitem.name || "", 70)}${hiddenLabel}
+        </span>
+        <span style="flex: 1; text-align: center;"></span>
+        <span title="${detailTitle}" style="flex: 1; text-align: center;">
+            ${scoreDisplay}
+        </span>
+        </div>
+    `;
+}
+
+function gbBindRemoveTask(rowEl, assignmentList, leafItem, taskitem) {
+    if (!rowEl) return;
+    rowEl.addEventListener("click", function () {
+        const assignmentCata = gbCateKey(leafItem);
+        const assignmentScore = (taskitem.score / taskitem.totalScore) * 100;
+        gbRemoveTaskById(assignmentList, taskitem.id);
+        sendtopSeccesstip(taskitem.fromGCalc
+            ? tlang("自定义项目已移除","Cunstom Assignment Removed")
+            : tlang("原生项目已移除","Original Assignment Removed"));
+        const cateScore = gcParseCateScore(assignmentCata);
+        const effCount = gcGetEffectiveCount(assignmentCata);
+        if (effCount <= 1) {
+            gbSetCateScore(assignmentCata, null);
+        } else if (cateScore !== null) {
+            gbSetCateScore(assignmentCata, (cateScore * effCount - parseFloat(assignmentScore)) / (effCount - 1));
+        } else {
+            gbSetCateScore(assignmentCata, null);
+        }
+        this.remove();
+        gcRefreshBundlePrediction(assignmentCata);
+        gbAfterLeafScoreChange(assignmentList, assignmentCata);
+        setTimeout(() => {
+            gcRefreshTotalScore(false);
+        }, 80);
+    });
+}
+
+function gbRenderLeafTasks(item, assignmentList, container, indent) {
+    if (!container) return;
+    const cataKey = gbCateKey(item);
+    const failedTasks = [];
+    const list = Array.isArray(item.learningTaskAndExamList) ? item.learningTaskAndExamList : [];
+    list.forEach((taskitem) => {
+        if (taskitem.gcalcHiddenState === "failed") {
+            failedTasks.push(taskitem);
+            return;
+        }
+        if (taskitem.score === null || taskitem.score === undefined) return;
+        container.insertAdjacentHTML("beforeend", gbTaskRowHtml(taskitem, cataKey, indent));
+        const rows = gbGetTaskRows(cataKey);
+        gbBindRemoveTask(rows[rows.length - 1], assignmentList, item, taskitem);
+    });
+    if (failedTasks.length > 0) {
+        gcRenderFailedBundle(item, failedTasks, container, assignmentList);
+    }
+}
+
+function gbAppendTaskHtml(cataKey, html) {
+    const wrap = document.getElementById("gb_tasks_" + cataKey);
+    if (!wrap) return null;
+    const bundle = Array.from(wrap.querySelectorAll("[data-bundle-cate]")).find(
+        (el) => el.getAttribute("data-bundle-cate") === String(cataKey)
+    );
+    if (bundle) bundle.insertAdjacentHTML("beforebegin", html);
+    else wrap.insertAdjacentHTML("beforeend", html);
+    const rows = gbGetTaskRows(cataKey);
+    return rows[rows.length - 1] || null;
+}
+
 function getUsrAssignmentInfoBeforeshowDiyBox(smsid, subjectid,subjectName,model){
     sys_showload(true);
     let data={
@@ -2719,10 +3001,9 @@ function getUsrAssignmentInfoBeforeshowDiyBox(smsid, subjectid,subjectName,model
                     const projects = responseData?.data?.evaluationProjectList || [];
                     // V2 接口 (GetDynamicScoreDetail) 在新版可能返回 learningTaskAndExamList: []，
                     // 导致预测面板看不到任何任务条目。检测到这种情况则去拉 V1 (手动 fetch)
-                    const allEmpty = projects.length > 0 && projects.every(p =>
-                        !Array.isArray(p.learningTaskAndExamList) || p.learningTaskAndExamList.length === 0
-                    );
-                    console.log("[V2Predict] allEmpty=", allEmpty, "projects=", projects.length);
+                    // 有子类的科目任务挂在 evaluationProjectList 子孙上，必须递归计数，不能只看顶层。
+                    const allEmpty = projects.length > 0 && gbCountTasks(projects) === 0;
+                    console.log("[V2Predict] allEmpty=", allEmpty, "projects=", projects.length, "taskCount=", gbCountTasks(projects));
                     if (allEmpty) {
                         try {
                             chrome.runtime.sendMessage(
@@ -2730,21 +3011,12 @@ function getUsrAssignmentInfoBeforeshowDiyBox(smsid, subjectid,subjectName,model
                                 (resp) => {
                                     const respLen = Array.isArray(resp?.evaluationProjectList) ? resp.evaluationProjectList.length : 'not-array';
                                     const respHasData = Array.isArray(resp?.evaluationProjectList) && resp.evaluationProjectList.length > 0;
-                                    const sumOfLearningTaskLists = Array.isArray(resp?.evaluationProjectList) ? resp.evaluationProjectList.reduce((a,p)=>a+(p?.learningTaskAndExamList?.length||0),0) : -1;
+                                    const sumOfLearningTaskLists = respHasData ? gbCountTasks(resp.evaluationProjectList) : -1;
                                     console.log("[V2Predict] fetchManualAssignmentList respLen=", respLen, "hasData=", respHasData, "fromCache=", resp?.fromCache, "totalTasks=", sumOfLearningTaskLists, "respKeys=", resp ? Object.keys(resp) : 'null', "error=", resp?.error, "lastError:", chrome.runtime.lastError);
-                                    // 合并：保留 V2 的 category 元数据（包括 score、proportion、name），把 V1 的 task 列表注入
+                                    // 合并：保留 V2 的 category 元数据（包括 score、proportion、name、子类），递归注入 V1 的 task 列表
                                     let merged = projects;
                                     if (respHasData) {
-                                        const v1Projects = resp.evaluationProjectList;
-                                        merged = projects.map(v2p => {
-                                            const v1Match = v1Projects.find(v1p =>
-                                                (v1p.evaluationProjectEName && v2p.evaluationProjectEName && v1p.evaluationProjectEName === v2p.evaluationProjectEName) ||
-                                                (v1p.evaluationProjectName && v2p.evaluationProjectName && v1p.evaluationProjectName === v2p.evaluationProjectName)
-                                            );
-                                            return Object.assign({}, v2p, {
-                                                learningTaskAndExamList: (v1Match && Array.isArray(v1Match.learningTaskAndExamList)) ? v1Match.learningTaskAndExamList : []
-                                            });
-                                        });
+                                        merged = gbMergeV1IntoV2(projects, resp.evaluationProjectList);
                                     }
                                     showDiyScoresBox(smsid, subjectid, subjectName, merged);
                                     sys_showload(false);
@@ -2807,7 +3079,7 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
     let selectionList = `<option value="none" disabled selected>${tlang("任务类别","Select Category")}</option>`;
     assignmentList.forEach(assignment => {
         selectionList += `
-            <option value="${assignment.evaluationProjectEName}">
+            <option value="${gbCateKey(assignment)}">
             ${tlang(assignment.evaluationProjectName, assignment.evaluationProjectEName)}
             </option>
         `;
@@ -2823,17 +3095,23 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
             <div style="margin-bottom: 20px;">
                 <p style="font-size: 14px; margin-right: 8px;">${tlang("学期ID","SemesterId")}：${smsId}&nbsp&nbsp&nbsp${tlang("&nbsp科目：","Subject:")}${subjectName} </p>
             </div>
-            <div style="margin-bottom: 20px;">
-                <label style="font-size: 14px; margin-right: 4px;">${tlang("任务名称","TaskName")}:</label>
-                <input placeholder="${tlang("自定义名称(可选)","CustomName(Optional)")}"  id="gb_aName" type="text" style="line-height: 20px; padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; margin-right: 24px;">
-                <label style="font-size: 14px; margin-right: 4px;">${tlang("得分(%)","Score(%)")}:</label>
-                <input placeholder="96" id="gb_aScore" type="number" style="line-height: 20px; padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; width: 60px;margin-right: 24px;">
-                <label style="font-size: 14px; margin-right: 4px;">${tlang("类别","Category")}:</label>
-                <select id="gb_cataSelect" style="padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px;margin-right: 20px;">
+            <div style="margin-bottom: 16px; display:flex; flex-wrap:nowrap; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="font-size: 13px; flex-shrink:0;">${tlang("任务名称","TaskName")}:</label>
+                <input placeholder="${tlang("自定义名称(可选)","CustomName(Optional)")}"  id="gb_aName" type="text" style="line-height: 20px; padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; width: 128px; flex-shrink:0;">
+                <label style="font-size: 13px; flex-shrink:0;">${tlang("得分(%)","Score(%)")}:</label>
+                <input placeholder="96" id="gb_aScore" type="number" style="line-height: 20px; padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; width: 52px; flex-shrink:0;">
+                <label style="font-size: 13px; flex-shrink:0;">${tlang("类别","Category")}:</label>
+                <select id="gb_cataSelect" style="padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; max-width: 132px; flex-shrink:0;">
                     ${selectionList}
                 </select>
-                <p id="gb_propDis" style="font-size: 14px; margin-right: 4px;display: inline-block;">占比: -%</p>
-                <button id="gb_appendBtn" style="font-size: 12px;background-color: #4CAF50; color: white; padding: 6px 9px; border: none; border-radius: 4px; margin-left: 62px; cursor: pointer;">${tlang("添加到列表","Add to List")}</button>
+                <span id="gb_subCataWrap" style="display:none; align-items:center; gap:6px; flex-shrink:0; min-width:0;">
+                    <label style="font-size: 13px;">${tlang("细分类别","Subcategory")}:</label>
+                    <select id="gb_subCataSelect" title="" style="padding: 3px 5px; border: 1px solid #ccc; border-radius: 4px; width: 132px; max-width: 132px; text-overflow: ellipsis;">
+                        <option value="none" disabled selected>${tlang("细分类别","Select Subcategory")}</option>
+                    </select>
+                </span>
+                <p id="gb_propDis" style="font-size: 13px; display: inline-block; margin:0; flex-shrink:0; min-width:72px;">${tlang("占比：","Prop.：")}-%</p>
+                <button id="gb_appendBtn" style="font-size: 12px;background-color: #4CAF50; color: white; padding: 6px 9px; border: none; border-radius: 4px; cursor: pointer; flex-shrink:0;">${tlang("添加到列表","Add to List")}</button>
             </div>
             <div style="margin-bottom: 20px;">
                 <div style="border: 0.2px solid #ccc; border-radius: 4px;width: 100%; margin: 0 auto; overflow-x: hidden; overflow-y: auto;">
@@ -2899,18 +3177,19 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
         
     });
     document.getElementById("gb_saveBtn").addEventListener("click", function() {
-        for(let i=0;i<assignmentList.length;i++){
-            let tmpScore = document.getElementById(assignmentList[i].evaluationProjectEName+"_score").getAttribute("scoreValue");
+        gbWalkCates(assignmentList, (item) => {
+            const scoreEl = document.getElementById(gbCateKey(item) + "_score");
+            const tmpScore = scoreEl ? scoreEl.getAttribute("scoreValue") : null;
             if(tmpScore==null||tmpScore==""||tmpScore=="-"||tmpScore=="NaN"||tmpScore===undefined){
-                assignmentList[i].scoreIsNull = true;
-                assignmentList[i].score = 0;
-                assignmentList[i].scoreLevel = "";
+                item.scoreIsNull = true;
+                item.score = 0;
+                item.scoreLevel = "";
             }else{
-                assignmentList[i].scoreIsNull = false;
-                assignmentList[i].score = parseFloat(tmpScore);
-                assignmentList[i].scoreLevel = scoreToLevel(parseFloat(tmpScore));
+                item.scoreIsNull = false;
+                item.score = parseFloat(tmpScore);
+                item.scoreLevel = scoreToLevel(parseFloat(tmpScore));
             }
-        }
+        });
 
         getFromChromeStorage(smsId+"|GPAList").then((result) => {
             console.log(result,"Result",subjectName);
@@ -2957,146 +3236,125 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
     
     
     const selectElement = document.getElementById("gb_cataSelect");
+    const subSelectElement = document.getElementById("gb_subCataSelect");
+    const subWrapElement = document.getElementById("gb_subCataWrap");
     const pElement = document.getElementById("gb_propDis");
 
     pElement.textContent = "";
+    pElement.gcLeafKey = null;
 
-    selectElement.addEventListener("change", function() {
-        const selectedItem = assignmentList.find(
-            item => item.evaluationProjectEName === selectElement.value
-        );
-        const proportion = selectedItem?.proportion ?? 30;//default
-        pElement.textContent = `${tlang("占比","Prop")}: ${proportion}%`;
-        pElement.gcValue = proportion;
-    });
-    var pendingAssignmentList = [];  
-    sys_showload(false);  
-    assignmentList.forEach(item => {
-        if(item.score===null||item.score=="-"||item.score=="NaN"||item.score===undefined){
-            item.scoreIsNull = true;
-        }else{
-            item.score=formatNumber(item.score,1);
+    function gbSyncCataSelectUI() {
+        const selectedItem = gbFindCate(assignmentList, selectElement.value);
+        if (!selectedItem) {
+            subWrapElement.style.display = "none";
+            pElement.textContent = `${tlang("占比","Prop")}-%`;
+            pElement.gcValue = null;
+            pElement.gcLeafKey = null;
+            return;
         }
+        if (gbHasChildren(selectedItem)) {
+            subWrapElement.style.display = "inline-flex";
+            let subOpts = `<option value="none" disabled selected>${tlang("细分类别","Select Subcategory")}</option>`;
+            selectedItem.evaluationProjectList.forEach((child) => {
+                const fullName = tlang(child.evaluationProjectName, child.evaluationProjectEName);
+                subOpts += `<option value="${gbCateKey(child)}" title="${fullName}">${limitBytes(fullName, 22)}</option>`;
+            });
+            subSelectElement.innerHTML = subOpts;
+            subSelectElement.title = "";
+            pElement.textContent = `${tlang("占比","Prop")}${selectedItem.proportion}%↘`;
+            pElement.gcValue = null;
+            pElement.gcLeafKey = null;
+        } else {
+            subWrapElement.style.display = "none";
+            subSelectElement.innerHTML = `<option value="none" disabled selected>${tlang("细分类别","Select Subcategory")}</option>`;
+            subSelectElement.title = "";
+            const proportion = selectedItem.proportion ?? 30;
+            pElement.textContent = `${tlang("占比","Prop")}${proportion}%`;
+            pElement.gcValue = proportion;
+            pElement.gcLeafKey = gbCateKey(selectedItem);
+        }
+    }
+
+    selectElement.addEventListener("change", gbSyncCataSelectUI);
+    subSelectElement.addEventListener("change", function () {
+        const parentItem = gbFindCate(assignmentList, selectElement.value);
+        const childItem = parentItem && gbHasChildren(parentItem)
+            ? parentItem.evaluationProjectList.find((c) => gbCateKey(c) === subSelectElement.value)
+            : null;
+        if (!childItem || !parentItem) return;
+        const fullName = tlang(childItem.evaluationProjectName, childItem.evaluationProjectEName);
+        subSelectElement.title = fullName;
+        pElement.textContent = `${tlang("占比","Prop")}${parentItem.proportion}%↘${childItem.proportion}%`;
+        pElement.gcValue = childItem.proportion;
+        pElement.gcLeafKey = gbCateKey(childItem);
+    });
+    var pendingAssignmentList = [];
+    sys_showload(false);
+
+    function renderCategory(item, parentItem, indent) {
+        const key = gbCateKey(item);
+        const isChild = !!parentItem;
+        const hasKids = gbHasChildren(item);
+        if (item.score === null || item.score == "-" || item.score == "NaN" || item.score === undefined) {
+            item.scoreIsNull = true;
+        } else {
+            item.score = formatNumber(item.score, 1);
+        }
+        const bg = isChild ? "rgba(245, 240, 220, 0.92)" : "rgba(255, 246, 203, 0.85)";
+        const padLeft = 10 + (indent || 0) * 16;
+        const host = parentItem
+            ? document.getElementById("gb_children_" + gbCateKey(parentItem))
+            : document.getElementById("gb_listbox");
+        if (!host) return;
+        const scoreLabel = item.scoreIsNull ? "-" : item.score;
+        const levelLabel = item.scoreIsNull ? "-" : (item.scoreLevel || scoreToLevel(item.score) || "-");
         const categoryHtml = `
-            <div id="${item.evaluationProjectEName}_div" style="font-size:13px; display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 246, 203, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
+            <div id="${key}_div" data-gb-top="${isChild ? "0" : "1"}" data-gb-child="${isChild ? "1" : "0"}" data-gb-bg="${bg}" style="font-size:13px; display: flex; align-items: center; justify-content: space-between; padding: 10px; padding-left:${padLeft}px; background-color: ${bg}; margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
             <span style="flex: 2; text-align: left;">
+                <span id="gbArrow_${key}" style="display:inline-block; width:14px; user-select:none; color:#8B1A10;">&#9660;</span>
                 ${tlang(item.evaluationProjectName, item.evaluationProjectEName)}(${item.proportion}%)
             </span>
             <span style="flex: 1; text-align: center;">
             </span>
-            <span scoreValue="${item.scoreIsNull?null:item.score}" gc_prop=${item.proportion} id="${item.evaluationProjectEName}_score" style="flex: 1; text-align: center;">
-                ${item.scoreIsNull?"-":item.score}% / ${item.scoreIsNull?"-":item.scoreLevel}
+            <span scoreValue="${item.scoreIsNull ? null : item.score}" gc_prop=${item.proportion} id="${key}_score" style="flex: 1; text-align: center;">
+                ${scoreLabel}% / ${levelLabel}
             </span>
             </div>
         `;
-        document.getElementById("gb_listbox").insertAdjacentHTML('beforeend', categoryHtml);
+        host.insertAdjacentHTML("beforeend", categoryHtml);
 
-        let calcedAvg = 0;
-        let calcedAvgCnt = 0;
-        const failedTasks = [];
-
-        item.learningTaskAndExamList.forEach(taskitem => {
-            // "批改中-无法计算" 的任务先收集，稍后合并为一个可展开 bundle 行
-            if (taskitem.gcalcHiddenState === "failed") {
-                failedTasks.push(taskitem);
-                return;
-            }
-            let tmpicon = "";
-            if(taskitem?.fromGCalc){
-                tmpicon = `<img src="${chrome.runtime.getURL("icon.png")}" style="width:15.5px; height:15.5px; vertical-align: middle; margin-top:-2px; margin-right: 6px;" />`;
-            }else{
-                tmpicon = `<img src="https://cdn.schoolis.cn/sis/favicon/sis.ico" style="width:16px; height:16px; vertical-align: middle; margin-right: 6px;" />`;
-            }
-
-            // 批改中（已计算出隐藏分）状态标签
-            const isHiddenCalc = taskitem.gcalcHiddenState === "calculated";
-            let hiddenLabel = "";
-            if (isHiddenCalc) {
-                hiddenLabel = ` <span style="color:#888;font-size:11px;">(${tlang("批改中-计算","Grading-Calc")})</span>`;
-            }
-
-            const itemCssClass = item.evaluationProjectEName;
-            const visScoreVal = (taskitem.score!==null) ? (taskitem.score/taskitem.totalScore*100) : "";
-            const scoreDisplay = (taskitem.score===null?"-&nbsp;":(taskitem.score/taskitem.totalScore*100).toFixed(1) + "%");
-
-            const listItemHtml = `
-                <div class="${itemCssClass}" data-vis-score="${visScoreVal}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
-                <span title="${taskitem.name}" style="flex: 2; text-align: left;">
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    ${tmpicon}
-                    &nbsp;&nbsp;${limitBytes(taskitem.name, 70)}${hiddenLabel}
-                </span>
-                <span style="flex: 1; text-align: center;">
-
-                </span>
-                <span  title="${tlang("详细","Details")}: ${taskitem.score}/${taskitem.totalScore}"  style="flex: 1; text-align: center;">
-                    ${scoreDisplay}
-                </span>
-                </div>
-            `;
-            if(taskitem.score!==null){
-                calcedAvg += taskitem.score/taskitem.totalScore*100;
-                calcedAvgCnt++;
-                document.getElementById("gb_listbox").insertAdjacentHTML('beforeend', listItemHtml);
-                let newTarget = document.getElementById("gb_listbox").getElementsByClassName(item.evaluationProjectEName)[(document.getElementById("gb_listbox").getElementsByClassName(item.evaluationProjectEName)).length-1];
-                newTarget.addEventListener("click", function() {
-                    removeId(assignmentList, taskitem.id);
-                    function removeId(data, targetId){
-                        for (const project of data) {
-                            if (project.learningTaskAndExamList) {
-                              const indexToRemove = project.learningTaskAndExamList.findIndex(item => item.id === targetId);
-                              if (indexToRemove !== -1) {
-                                project.learningTaskAndExamList.splice(indexToRemove, 1);
-                                break;
-                              }
-                            }
-                          }
-                    }
-
-                    let assignmentScore = taskitem.score/taskitem.totalScore*100;
-                    let assignmentCata = item.evaluationProjectEName;
-                    let effCount = gcGetEffectiveCount(assignmentCata); // 含已生效 bundle 的权重
-                    sendtopSeccesstip(tlang("原生项目已移除","Original Assignment Removed"));
-
-                    let cateScore = document.getElementById(assignmentCata + "_score").getAttribute("scoreValue") ? parseFloat(document.getElementById(assignmentCata + "_score").getAttribute("scoreValue")) : null;
-
-                    // 修复：如果原来 cateScore 是空，就直接置0。其余情况正常计算
-                    if(effCount<=1){
-                        document.getElementById(assignmentCata + "_score").textContent = "-% / -";
-                        document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", null);
-                    }else{
-                        let newCateScore = cateScore
-                        ? (cateScore * effCount - parseFloat(assignmentScore)) / (effCount - 1)
-                        : -1;
-                        document.getElementById(assignmentCata + "_score").textContent = `${newCateScore.toFixed(1)}% / ${scoreToLevel(newCateScore)}`;
-                        document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", newCateScore);
-                        console.log(newCateScore," is calc:",cateScore,"*",effCount,"-",parseFloat(assignmentScore),"/",effCount-1);
-                    }
-    
-                    if(document.getElementById(assignmentCata + "_score").textContent=="Infinity% / "||document.getElementById(assignmentCata + "_score").textContent=="NaN% / "||document.getElementById(assignmentCata + "_score").textContent.includes("-1")){
-                        document.getElementById(assignmentCata + "_score").textContent = "-% / -";
-                        document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", null);
-                    }
-                    setTimeout(() => {
-                        const newOverall = gb_calcTotalScore();
-                        document.getElementById("SubjectTotal_score").textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
-                        document.getElementById("SubjectTotal_score").setAttribute("scoreValue", newOverall);
-                    }, 80);
-
-                    this.remove();
-                    // 移除后重新推导 bundle 预测分（基于新的 sum_visible / cateScore）
-                    gcRefreshBundlePrediction(assignmentCata);
-                });
-            }
-            
-        });
-        // 不再用任务平均分覆盖 category 的 scoreValue —— 保留 fetch 得到的原始分数（V2 / V1）
-        // 用户要求：category 显示从接口获取的分数，而非由可见任务再次平均得到的值
-
-        // 把"批改中-无法计算"的任务合并成一个可展开的 bundle 行
-        if (failedTasks.length > 0) {
-            gcRenderFailedBundle(item, failedTasks);
+        if (hasKids) {
+            host.insertAdjacentHTML("beforeend", `<div id="gb_children_${key}"></div>`);
+            item.evaluationProjectList.forEach((child) => renderCategory(child, item, (indent || 0) + 1));
         }
+
+        const leftoverTasks = Array.isArray(item.learningTaskAndExamList) && item.learningTaskAndExamList.length > 0;
+        if (!hasKids || leftoverTasks) {
+            host.insertAdjacentHTML("beforeend", `<div id="gb_tasks_${key}"></div>`);
+            gbRenderLeafTasks(item, assignmentList, document.getElementById("gb_tasks_" + key), (indent || 0) + 1);
+        }
+
+        const row = document.getElementById(key + "_div");
+        const wrappers = [];
+        const childWrap = document.getElementById("gb_children_" + key);
+        const taskWrap = document.getElementById("gb_tasks_" + key);
+        if (childWrap) wrappers.push(childWrap);
+        if (taskWrap) wrappers.push(taskWrap);
+        if (row && wrappers.length) {
+            row.addEventListener("click", function (ev) {
+                ev.stopPropagation();
+                const hide = wrappers[0].style.display !== "none";
+                wrappers.forEach((w) => { w.style.display = hide ? "none" : ""; });
+                const arrow = document.getElementById("gbArrow_" + key);
+                if (arrow) arrow.innerHTML = hide ? "&#9654;" : "&#9660;";
+            });
+        }
+    }
+
+    gbWalkCates(assignmentList, (item) => gbStripDuplicatedParentTasks(item));
+    assignmentList.forEach((item) => renderCategory(item, null, 0));
+    assignmentList.forEach((item) => {
+        if (gbHasChildren(item)) gbRefreshParentScore(item);
     });
     //init overallScore
     document.getElementById("SubjectTotal_score").textContent = `${gb_calcTotalScore()}% / ${scoreToLevel(gb_calcTotalScore())}`;
@@ -3114,15 +3372,41 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
 
         const assignmentName = document.getElementById("gb_aName").value==""?`${tlang("用户自定义任务","Custom Assignment")}${(Math.random()*10000).toFixed(0)}`:document.getElementById("gb_aName").value;
         const assignmentScore = document.getElementById("gb_aScore").value;
-        const assignmentCata = document.getElementById("gb_cataSelect").value;
-        const assignmentProp = document.getElementById("gb_propDis").gcValue;   
+        if(assignmentScore<0||assignmentScore>100){
+            sendTopErrortip(tlang("分数必须在0~100之间","Score must be between 0~100"));
+            return;
+        }
 
-        const assignmentCataIndex = document.getElementById("gb_cataSelect").selectedIndex;
-        
-        assignmentList[assignmentCataIndex-1].learningTaskAndExamList.push({
+        const parentItem = gbFindCate(assignmentList, document.getElementById("gb_cataSelect").value);
+        if (!parentItem) {
+            sendTopErrortip(tlang("请先选择任务类别","Please select a category first"));
+            return;
+        }
+        let leafItem = parentItem;
+        if (gbHasChildren(parentItem)) {
+            const subKey = document.getElementById("gb_subCataSelect").value;
+            if (!subKey || subKey === "none") {
+                sendTopErrortip(tlang("请先选择细分类别","Please select a subcategory first"));
+                return;
+            }
+            leafItem = gbFindCate(assignmentList, subKey);
+        }
+        if (!leafItem || gbHasChildren(leafItem)) {
+            sendTopErrortip(tlang("请先选择细分类别","Please select a subcategory first"));
+            return;
+        }
+
+        const assignmentCata = gbCateKey(leafItem);
+        const parentForPath = gbFindParentOf(assignmentList, assignmentCata);
+        const proPath = parentForPath
+            ? `${parentForPath.evaluationProjectId},${leafItem.evaluationProjectId},`
+            : `${leafItem.evaluationProjectId},`;
+
+        if (!Array.isArray(leafItem.learningTaskAndExamList)) leafItem.learningTaskAndExamList = [];
+        const newTask = {
             "id": generateId(),
-            "evaluationProjectId": assignmentList[assignmentCataIndex-1].evaluationProjectId,
-            "proPath": `${assignmentList[assignmentCataIndex-1].evaluationProjectId},`,
+            "evaluationProjectId": leafItem.evaluationProjectId,
+            "proPath": proPath,
             "type": 2,
             "score": assignmentScore,
             "levelString": "",
@@ -3135,140 +3419,56 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
             "scoreType": 1,
             "resultType": 0,
             "fromGCalc": true
-        });
+        };
+        leafItem.learningTaskAndExamList.push(newTask);
 
-        if(assignmentScore<0||assignmentScore>100){
-            sendTopErrortip(tlang("分数必须在0~100之间","Score must be between 0~100"));
-            return;
+        gbExpandCate(gbCateKey(parentItem));
+        gbExpandCate(assignmentCata);
+        let taskWrap = document.getElementById("gb_tasks_" + assignmentCata);
+        if (!taskWrap) {
+            const leafRow = document.getElementById(assignmentCata + "_div");
+            if (leafRow) leafRow.insertAdjacentHTML("afterend", `<div id="gb_tasks_${assignmentCata}"></div>`);
+            taskWrap = document.getElementById("gb_tasks_" + assignmentCata);
         }
-        let inputInfo = {
-            smsId: smsId,
-            subjectId: subjectId,
-            name: assignmentName,
-            percentageScore: assignmentScore,
-            cataname: assignmentCata,
-            proportion: assignmentProp
-        }
+        const indent = parentForPath ? 2 : 1;
+        const listItemHtml = gbTaskRowHtml(newTask, assignmentCata, indent, tlang("自定义项目","Entered Score"));
+        const newTarget = gbAppendTaskHtml(assignmentCata, listItemHtml);
+        gbBindRemoveTask(newTarget, assignmentList, leafItem, newTask);
 
-        const listItemHtml = `
-                <div class="${assignmentCata}" data-vis-score="${Number(assignmentScore)}" style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background-color: rgba(255, 255, 255, 0.85); margin-bottom: 3px; margin-top: 3px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); cursor: pointer;">
-                <span title="${assignmentName}" style="flex: 2; text-align: left;">
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                    <img src="${chrome.runtime.getURL("icon.png")}" style="width:15.5px; height:15.5px; vertical-align: middle; margin-top:-2px; margin-right: 6px;" />
-                    &nbsp;&nbsp;${limitBytes(assignmentName, 70)}
-                </span>
-                <span style="flex: 1; text-align: center;">
-                    
-                </span>
-                <span title="${tlang("自定义项目","Entered Score")}"  style="flex: 1; text-align: center;">
-                    ${Number(assignmentScore).toFixed(1)}% 
-                </span>
-                </div>
-            `;
-            let insertTarget=document.getElementById("gb_listbox").getElementsByClassName(assignmentCata);
+        let cateScore = gcParseCateScore(assignmentCata);
+        let effCount = gcGetEffectiveCount(assignmentCata);
+        let newCateScore = cateScore !== null
+            ? (cateScore*(effCount-1) + parseFloat(assignmentScore))/(effCount)
+            : parseFloat(assignmentScore);
+        gbSetCateScore(assignmentCata, newCateScore);
+        gcRefreshBundlePrediction(assignmentCata);
+        gbAfterLeafScoreChange(assignmentList, assignmentCata);
+        gbPulseCate(assignmentCata, newCateScore >= (cateScore !== null ? cateScore : 0));
+        if (parentForPath) gbPulseCate(gbCateKey(parentForPath), newCateScore >= (cateScore !== null ? cateScore : 0));
 
-            if(insertTarget.length==0){
-                console.log("no target");
-                insertTarget=[document.getElementById(assignmentCata+"_div")]
-                console.log(insertTarget);
-            }
-            insertTarget[insertTarget.length-1]?.insertAdjacentHTML('afterend', listItemHtml);
+        let tscateScoreDiv = document.getElementById("SubjectTotal_score").textContent.trim();
+        let tsmatch = tscateScoreDiv.match(/^([\d.]+)% /);
+        tsmatch = tsmatch ? parseFloat(tsmatch[1]) : 0;
 
-            let newTarget = document.getElementById("gb_listbox").getElementsByClassName(assignmentCata)[(document.getElementById("gb_listbox").getElementsByClassName(assignmentCata)).length-1];
-            console.log(newTarget)
+        setTimeout(() => {
+            const newOverall = gb_calcTotalScore();
+            document.getElementById("SubjectTotal_score").textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
+            document.getElementById("SubjectTotal_score").setAttribute("scoreValue", newOverall);
+            let TscoreElement = document.getElementById("SubjectTotal_score");
+            let TdivElement = document.getElementById("SubjectTotal_div");
 
-            newTarget.addEventListener("click", function() {
-                let effCount = gcGetEffectiveCount(assignmentCata); // 含已生效 bundle 的权重
-                sendtopSeccesstip(tlang("自定义项目已移除","Cunstom Assignment Removed"));
-
-                let cateScore = document.getElementById(assignmentCata + "_score").getAttribute("scoreValue") ? parseFloat(document.getElementById(assignmentCata + "_score").getAttribute("scoreValue")) : null;
-
-                // 修复：如果原来 cateScore 是空，就直接置0。其余情况正常计算
-                let newCateScore = cateScore
-                    ? (cateScore * effCount - parseFloat(assignmentScore)) / (effCount - 1)
-                    : -1;
-                console.log(newCateScore," is calc:",cateScore,"*",effCount,"-",parseFloat(assignmentScore),"/",effCount-1);
-            
-                document.getElementById(assignmentCata + "_score").textContent = `${newCateScore.toFixed(1)}% / ${scoreToLevel(newCateScore)}`;
-                document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", newCateScore);
-
-                if(document.getElementById(assignmentCata + "_score").textContent=="NaN% / "||document.getElementById(assignmentCata + "_score").textContent.includes("-1")){
-                    document.getElementById(assignmentCata + "_score").textContent = "-% / -";
-                    document.getElementById(assignmentCata + "_score").setAttribute("scoreValue", null);
-                }
-                setTimeout(() => {
-                    const newOverall = gb_calcTotalScore();
-                    document.getElementById("SubjectTotal_score").textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
-                    document.getElementById("SubjectTotal_score").setAttribute("scoreValue", newOverall);
-                }, 80);
-
-                this.remove();
-                // 移除后重新推导 bundle 预测分
-                gcRefreshBundlePrediction(assignmentCata);
-            });
-            
-
-            let cateScoreDiv = document.getElementById(assignmentCata + "_score").getAttribute("scoreValue");
-            let cateScore = cateScoreDiv ? parseFloat(cateScoreDiv) : null;
-
-            // 插入后再取有效任务数（含已生效 bundle 权重）
-            let effCount = gcGetEffectiveCount(assignmentCata);
-            let newCateScore = cateScore ? (cateScore*(effCount-1) + parseFloat(assignmentScore))/(effCount) : parseFloat(assignmentScore);
-            //Update Score
-            
-            document.getElementById(assignmentCata+"_score").textContent = `${newCateScore.toFixed(1)}% / ${scoreToLevel(newCateScore)}`;
-            document.getElementById(assignmentCata+"_score").setAttribute("scoreValue",newCateScore);
-            // 新增可见任务后重新推导 bundle 预测分
-            gcRefreshBundlePrediction(assignmentCata);
-
-            //ANIMATION
-            let scoreElement = document.getElementById(assignmentCata + "_score");
-            let divElement = document.getElementById(assignmentCata + "_div");
-
-            scoreElement.style.transition = "transform 0.3s ease-in-out";
-            scoreElement.style.transform = "scale(1.5)";
+            TscoreElement.style.transition = "transform 0.3s ease-in-out";
+            TscoreElement.style.transform = "scale(1.5)";
             setTimeout(() => {
-                scoreElement.style.transform = "scale(1)";
+                TscoreElement.style.transform = "scale(1)";
             }, 300);
-            
-            divElement.style.transition = "background-color 0.5s ease-in-out";
-            divElement.style.backgroundColor = newCateScore>=(cateScore?cateScore:0)?"rgb(30, 244, 137)":"rgba(235, 144, 144, 0.85)"; 
+
+            TdivElement.style.transition = "background-color 0.5s ease-in-out";
+            TdivElement.style.backgroundColor = parseFloat(newOverall)>=(tsmatch)?"rgb(30, 244, 137)":"rgba(235, 144, 144, 0.85)";
             setTimeout(() => {
-                divElement.style.backgroundColor = "rgba(255, 246, 203, 0.85)"; 
+                TdivElement.style.backgroundColor = "rgba(255, 246, 203, 0.85)";
             }, 500);
-
-            //Animation:OverallScore
-            let tscateScoreDiv = document.getElementById("SubjectTotal_score").textContent.trim();
-            let tsmatch = tscateScoreDiv.match(/^([\d.]+)% /);
-            tsmatch = tsmatch ? parseFloat(tsmatch[1]) : 0;
-
-
-
-
-            setTimeout(() => {
-                const newOverall = gb_calcTotalScore();
-                document.getElementById("SubjectTotal_score").textContent = `${newOverall}% / ${scoreToLevel(newOverall)}`;
-                document.getElementById("SubjectTotal_score").setAttribute("scoreValue", newOverall);
-                let TscoreElement = document.getElementById("SubjectTotal_score");
-                let TdivElement = document.getElementById("SubjectTotal_div");
-
-                TscoreElement.style.transition = "transform 0.3s ease-in-out";
-                TscoreElement.style.transform = "scale(1.5)";
-                setTimeout(() => {
-                    TscoreElement.style.transform = "scale(1)";
-                }, 300);
-                
-                TdivElement.style.transition = "background-color 0.5s ease-in-out";
-                TdivElement.style.backgroundColor = newCateScore>=(tsmatch)?"rgb(30, 244, 137)":"rgba(235, 144, 144, 0.85)"; 
-                setTimeout(() => {
-                    TdivElement.style.backgroundColor = "rgba(255, 246, 203, 0.85)"; 
-                }, 500);
-            }, 60);
-            
-            
-            
-
-
+        }, 60);
     });
     try{
         document.getElementById("gb_nextStepBtn").addEventListener("click", function() {
@@ -3284,8 +3484,10 @@ function showDiyScoresBox(smsId,subjectId,subjectName,assignmentList){
 function gcGetEffectiveCount(cataName){
     const lb = document.getElementById("gb_listbox");
     if(!lb) return 0;
-    let n = lb.getElementsByClassName(cataName).length;
-    const bundleRow = lb.querySelector('[data-bundle-cate="' + cataName + '"]');
+    let n = gbGetTaskRows(cataName).length;
+    const bundleRow = Array.from(lb.querySelectorAll("[data-bundle-cate]")).find(
+        (el) => el.getAttribute("data-bundle-cate") === String(cataName)
+    );
     if (bundleRow && bundleRow.getAttribute("data-bundle-active") === "1") {
         n += parseInt(bundleRow.getAttribute("data-bundle-size")) || 0;
     }
@@ -3315,10 +3517,8 @@ function gcParseCateScore(cata){
 
 // 计算某 category 的可见任务分数之和（按百分比；data-vis-score 在渲染时写入）
 function gcGetSumVisible(cata){
-    const lb = document.getElementById("gb_listbox");
-    if(!lb) return 0;
     let sum = 0;
-    const rows = lb.getElementsByClassName(cata);
+    const rows = gbGetTaskRows(cata);
     for (let i=0; i<rows.length; i++){
         const v = parseFloat(rows[i].getAttribute("data-vis-score"));
         if (!isNaN(v)) sum += v;
@@ -3332,12 +3532,14 @@ function gcGetSumVisible(cata){
 function gcRefreshBundlePrediction(cata){
     const lb = document.getElementById("gb_listbox");
     if(!lb) return;
-    const bundleRow = lb.querySelector('[data-bundle-cate="' + cata + '"]');
+    const bundleRow = Array.from(lb.querySelectorAll("[data-bundle-cate]")).find(
+        (el) => el.getAttribute("data-bundle-cate") === String(cata)
+    );
     if (!bundleRow) return;
     const n = parseInt(bundleRow.getAttribute("data-bundle-size")) || 0;
     if (n === 0) return;
     const cateScore = gcParseCateScore(cata);
-    const visN = lb.getElementsByClassName(cata).length;
+    const visN = gbGetTaskRows(cata).length;
     const predEl = document.getElementById("gcBundlePred_" + cata);
     if (cateScore === null) {
         if (predEl) predEl.innerHTML = `&mdash;&mdash; <span style="color:#888;font-size:11px;">(&times;${n})</span>`;
@@ -3356,10 +3558,10 @@ function gcRefreshBundlePrediction(cata){
 
 // 把一个 category 的全部"批改中-无法计算"任务渲染成一个可展开的 bundle 行
 // 预测分自动从 category 分推导，无需用户输入
-function gcRenderFailedBundle(item, failedTasks){
-    const lb = document.getElementById("gb_listbox");
+function gcRenderFailedBundle(item, failedTasks, container, assignmentList){
+    const lb = container || document.getElementById("gb_listbox");
     if(!lb) return;
-    const cata = item.evaluationProjectEName;
+    const cata = gbCateKey(item);
     const n = failedTasks.length;
 
     let memberRows = "";
@@ -3412,7 +3614,9 @@ function gcRenderFailedBundle(item, failedTasks){
     `;
     lb.insertAdjacentHTML('beforeend', bundleHtml);
 
-    const bundleRow = lb.querySelector('[data-bundle-cate="' + cata + '"]');
+    const bundleRow = Array.from(lb.querySelectorAll("[data-bundle-cate]")).find(
+        (el) => el.getAttribute("data-bundle-cate") === String(cata)
+    );
     const arrowEl = document.getElementById("gcBundleArrow_" + cata);
     const subsEl = document.getElementById("gcBundleSubs_" + cata);
     const removeBtn = document.getElementById("gcBundleRemoveAll_" + cata);
@@ -3430,6 +3634,7 @@ function gcRenderFailedBundle(item, failedTasks){
 
     if (bundleRow) {
         bundleRow.addEventListener("click", function(ev){
+            ev.stopPropagation();
             // 点击红色"移除"按钮时不触发展开/收起
             if (ev.target && (ev.target.id === ("gcBundleRemoveAll_"+cata))) return;
             toggleSubs();
@@ -3440,27 +3645,22 @@ function gcRenderFailedBundle(item, failedTasks){
         removeBtn.addEventListener("click", function(ev){
             ev.stopPropagation();
             // 移除 bundle -> category 退回为"仅可见任务的平均分"
-            const scoreEl = document.getElementById(cata + "_score");
-            const visN = document.getElementById("gb_listbox").getElementsByClassName(cata).length;
+            const visN = gbGetTaskRows(cata).length;
             const sumVis = gcGetSumVisible(cata);
             // 先把 bundle 从 DOM 中移除，这样 gcGetEffectiveCount 不再计入 bundle
             if (bundleRow) bundleRow.remove();
             if (subsEl) subsEl.remove();
-            if (scoreEl) {
-                if (visN > 0) {
-                    const base = sumVis / visN;
-                    scoreEl.textContent = `${base.toFixed(1)}% / ${scoreToLevel(base)}`;
-                    scoreEl.setAttribute("scoreValue", base);
-                } else {
-                    scoreEl.textContent = "-% / -";
-                    scoreEl.setAttribute("scoreValue", null);
-                }
+            if (visN > 0) {
+                gbSetCateScore(cata, sumVis / visN);
+            } else {
+                gbSetCateScore(cata, null);
             }
             // 从数据中移除这些任务（保证保存/再次打开一致）
             if (item && Array.isArray(item.learningTaskAndExamList)) {
                 const ids = failedTasks.map(f => f.id);
                 item.learningTaskAndExamList = item.learningTaskAndExamList.filter(t => ids.indexOf(t.id) === -1);
             }
+            if (assignmentList) gbAfterLeafScoreChange(assignmentList, cata);
             gcRefreshTotalScore(true);
             sendtopSeccesstip(tlang("已移除"+n+"个批改中项目", "Removed "+n+" in-grading item(s)"));
         });
@@ -3471,23 +3671,22 @@ function gcRenderFailedBundle(item, failedTasks){
 }
 
 function gb_calcTotalScore(){
-    const select=document.getElementById("gb_cataSelect");
     let totalScore = 0;
     let totalWeight = 0;
-    Array.from(select.options)
-    .filter(option => option.value !== "none") // 排除"任务类别"提示
-    .forEach(option => {
-        let titleDiv = document.getElementById(option.value + "_score")
-        let match = document.getElementById(option.value + "_score").getAttribute("scoreValue")
+    const rows = document.querySelectorAll('#gb_listbox [data-gb-top="1"]');
+    rows.forEach((row) => {
+        const key = row.id.replace(/_div$/, "");
+        const titleDiv = document.getElementById(key + "_score");
+        if (!titleDiv) return;
+        const match = titleDiv.getAttribute("scoreValue");
         if (match!==null&&match!==undefined&&match>=0&&match!="null") {
-            let cateScore = match ? parseFloat(match) : null;
-            totalScore += cateScore*parseInt(titleDiv.getAttribute("gc_prop"));
-            totalWeight += parseInt(titleDiv.getAttribute("gc_prop"));
-            
+            const cateScore = parseFloat(match);
+            const prop = parseFloat(titleDiv.getAttribute("gc_prop"));
+            if (isNaN(cateScore) || isNaN(prop)) return;
+            totalScore += cateScore * prop;
+            totalWeight += prop;
         }
-
     });
-    //console.log(totalScore,totalWeight,totalScore/totalWeight);
     return (totalScore/totalWeight).toFixed(1);
 }
 
