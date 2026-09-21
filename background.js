@@ -81,9 +81,9 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【动态成绩】修复了不刷新进入、切换学期或关闭任务预测后，日期/GPA文案不覆盖，以及「进入任务预测」按钮有时消失的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams日历】修复了课表同步可能重复添加日历事件的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【任务详情】由于教务关闭了获取任务平均分/最高分的接口，该功能可能将不再可用</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【任务预测】适配包含子类别分数项的科目，嵌套类别下的任务与总分计算现已可用</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【GPA计算】修复部分学科在特定分数下无法正确换算 GPA 的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【成绩详细】修复 Giaoculator V1 计算科目在成绩详细页无法快速查看分项分数的问题</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -91,9 +91,9 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Dynamic Scores】Fixed missing date/GPA overlays and the missing “Enter Prediction” button after in-page navigation, semester switches, or closing prediction</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Teams Calendar】Fixed class schedule sync possibly creating duplicate calendar events</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Task Details】Class average/highest score may no longer be available, because the school closed that API</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Score Prediction】Subjects with nested score categories are now supported for task editing and total-score calculation</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【GPA Calculation】Fixed incorrect GPA conversion for some subjects at certain score values</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Grade Details】V1-calculated subjects now show breakdown scores promptly on the grade detail view</p>
 
     </div>
     

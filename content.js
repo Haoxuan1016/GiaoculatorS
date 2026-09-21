@@ -1,4 +1,4 @@
-﻿let version = "1.3.8";
+﻿let version = "1.3.9";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
