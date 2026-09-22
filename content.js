@@ -1,4 +1,4 @@
-﻿let version = "1.3.9";
+﻿let version = "1.3.10";
 function runWhenElementReady(selector, callback, interval, maxAttempts) {
     let attempts = 0;
 
@@ -1078,7 +1078,7 @@ function fun_rewriteRealtimeUpdateTimeNode(target) {
         return;
     }
     if (text === "首次公布时间：2008-10-17 00:00" || text === "First Publish Time：2008-10-17 00:00") {
-        target.innerText = tlang("由Giaoculator使用V1方法计算", "Calced Using V1 Method");
+        target.innerText = tlang("由Giaoculator使用V1.1方法计算", "Calced Using V1.1 Method");
         const parentDiv = target.parentElement;
         if (parentDiv && !parentDiv._gcV1ClickBound) {
             parentDiv._gcV1ClickBound = true;
@@ -1280,7 +1280,7 @@ function updateContent_DetailPage() {
             
             target.children[1].innerText="";
         }else if(target.children[1].innerText=="2008-10-17 00:00"){
-            target.children[0].innerText=tlang("Giaoculator计算的数据","Giaoculator calced data");
+            target.children[0].innerText=tlang("Giaoculator计算的数据(V1.1)","Giaoculator calced data(V1.1)");
             
             target.children[1].innerText="";
         }

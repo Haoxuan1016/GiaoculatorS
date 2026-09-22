@@ -538,6 +538,8 @@ function setLanguage() {
             'main_header_custom': 'Other Settings',
             'customGPAweightLabel': 'GPA Calculation Weights',
             'customGPAweight': 'Edit Weights',
+            'courseAdjustLabel': 'Course Adjustments',
+            'courseAdjustBtn': 'Edit Rules',
             'scratchLabel': 'Scratch for New Scores'
         },
         'zh': {
@@ -561,6 +563,8 @@ function setLanguage() {
             'main_header_custom': '其他设置',
             'customGPAweightLabel': 'GPA计算权重',
             'customGPAweight': '编辑科目权重',
+            'courseAdjustLabel': '课程调整',
+            'courseAdjustBtn': '编辑规则',
             'scratchLabel': '新分数刮一刮'
         }
     };
@@ -1222,6 +1226,314 @@ function beforeopenCustomGPAWeightModal(){
         });
     });
     
+}
+
+document.getElementById('courseAdjustBtn').addEventListener('click', beforeOpenCourseAdjustModal);
+
+function courseAdjustTypeLabel(type) {
+    if (type === "dropped") return tlang("退课排除", "Dropped");
+    return String(type || "");
+}
+
+function beforeOpenCourseAdjustModal() {
+    chrome.storage.local.get(["lastLoginUser", "courseAdjustRules"], function(data) {
+        let lastLoginUser = "[本地无记录，请先登录一次校宝平台]";
+        let lastLoginUser2 = "-----";
+        try {
+            const saved = data.lastLoginUser;
+            if (saved && saved.lastLoginUser) {
+                lastLoginUser = saved.lastLoginUser;
+                lastLoginUser2 = saved.lastLoginUser2 ? saved.lastLoginUser2 : "-----";
+            }
+        } catch (error) {}
+        const rules = Array.isArray(data.courseAdjustRules) ? data.courseAdjustRules : [];
+        openCourseAdjustModal(lastLoginUser, lastLoginUser2, rules);
+    });
+}
+
+function openCourseAdjustModal(lastLoginUser, lastLoginUser2, savedRules) {
+    try { document.getElementById('showReloadTip').innerText = ""; } catch (e) {}
+
+    const modal = document.createElement('div');
+    modal.classList.add('course-adjust-modal');
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h2>${tlang("课程调整", "Course Adjustments")}</h2>
+            <p id="course-adjust-help">
+              ${tlang(
+                "规则仅在所选校宝账号为当前登录账号时生效。退课课程不会出现在动态成绩学科列表中，也不会计入 GPA。课程名按包含关系匹配中文名或英文名，请填写完整课名。例如 Computer Science I 不会匹配 Computer Science II，而 Computer Science 会同时匹配这两门课。",
+                "A rule applies only while that Schoolis account is logged in. A dropped course is left out of the dynamic score subject list and is not included in GPA. The course key matches as part of the Chinese or English subject name, so enter the full course name. Computer Science I does not match Computer Science II. Computer Science matches both."
+              )}
+            </p>
+            <div class="course-adjust-inputs">
+                <select id="courseAdjustUser"></select>
+                <select id="courseAdjustType">
+                    <option value="dropped">${tlang("退课排除", "Dropped")}</option>
+                </select>
+                <input id="courseAdjustKey" type="text" placeholder="${tlang("课程名，例如 Computer Science I", "Course name, e.g. Computer Science I")}" />
+                <button id="courseAdjustAdd" type="button">${tlang("添加", "Add")}</button>
+            </div>
+            <ul class="course-adjust-list"></ul>
+            <div class="modal-buttons">
+                <button id="courseAdjustCancelBtn" type="button">${tlang("取消", "Cancel")}</button>
+                <button id="courseAdjustSaveBtn" type="button">${tlang("保存", "Save")}</button>
+            </div>
+        </div>
+    `;
+
+    const style = document.createElement('style');
+    style.textContent = `
+        .course-adjust-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .course-adjust-modal .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            width: 560px;
+            max-width: calc(100% - 32px);
+            max-height: 80vh;
+            overflow: auto;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .course-adjust-modal h2 {
+            font-size: 18px;
+            color: #333;
+            margin: 0 0 10px 0;
+        }
+        #course-adjust-help {
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+            margin-top: 0;
+        }
+        .course-adjust-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .course-adjust-inputs select,
+        .course-adjust-inputs input {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #111;
+        }
+        #courseAdjustUser { width: 160px; max-width: 100%; }
+        #courseAdjustType { width: 120px; }
+        #courseAdjustKey { flex: 1; min-width: 160px; }
+        #courseAdjustAdd {
+            background-color: rgb(88, 155, 255);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            cursor: pointer;
+        }
+        #courseAdjustAdd:hover { background-color: rgb(64, 137, 247); }
+        .course-adjust-list {
+            list-style: none;
+            padding-left: 0;
+            margin: 0 0 12px 0;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        .course-adjust-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 6px 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            background: #fafafa;
+            margin-top: 6px;
+        }
+        .course-adjust-text {
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .remove-course-adjust {
+            cursor: pointer;
+            font-weight: bold;
+            color: #666;
+            flex: none;
+        }
+        .remove-course-adjust:hover { color: #333; }
+        .course-adjust-modal .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .course-adjust-modal .modal-buttons button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        #courseAdjustCancelBtn { background-color: #ccc; }
+        #courseAdjustSaveBtn { background-color: #4CAF50; color: white; }
+        #courseAdjustSaveBtn:hover { background-color: #45a049; }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(modal);
+
+    const userSelect = modal.querySelector('#courseAdjustUser');
+    const typeSelect = modal.querySelector('#courseAdjustType');
+    const keyInput = modal.querySelector('#courseAdjustKey');
+    const listEl = modal.querySelector('.course-adjust-list');
+
+    function appendUserOption(value, disabled) {
+        const option = document.createElement('option');
+        option.value = disabled ? "" : value;
+        option.textContent = value;
+        option.disabled = !!disabled;
+        userSelect.appendChild(option);
+    }
+
+    const placeholder = document.createElement('option');
+    placeholder.value = "";
+    placeholder.textContent = tlang("请选择校宝账号", "Select Xiaobao account");
+    placeholder.selected = true;
+    userSelect.appendChild(placeholder);
+    appendUserOption(lastLoginUser, String(lastLoginUser).startsWith("["));
+    appendUserOption(lastLoginUser2, String(lastLoginUser2).startsWith("-"));
+
+    function flashField(el) {
+        el.style.boxShadow = '0 0 8px 2px rgb(38, 176, 77), 0 0 16px 6px #ffedc2';
+        el.style.transition = 'box-shadow 0.4s';
+        setTimeout(() => { el.style.boxShadow = ''; }, 1100);
+        el.focus();
+    }
+
+    function addRuleRow(rule) {
+        const li = document.createElement('li');
+        li.className = 'course-adjust-item';
+        li.dataset.id = rule.id;
+        li.dataset.user = rule.user;
+        li.dataset.type = rule.type;
+        li.dataset.courseKey = rule.courseKey;
+
+        const text = document.createElement('span');
+        text.className = 'course-adjust-text';
+        text.title = `${rule.user} · ${courseAdjustTypeLabel(rule.type)} · ${rule.courseKey}`;
+        text.textContent = `${rule.user} · ${courseAdjustTypeLabel(rule.type)} · ${rule.courseKey}`;
+
+        const remove = document.createElement('span');
+        remove.className = 'remove-course-adjust';
+        remove.title = tlang("移除", "Remove");
+        remove.textContent = "×";
+
+        li.appendChild(text);
+        li.appendChild(remove);
+        listEl.appendChild(li);
+    }
+
+    savedRules.forEach((rule) => {
+        if (!rule || rule.type !== "dropped") return;
+        const user = String(rule.user || "").trim();
+        const courseKey = String(rule.courseKey || "").trim();
+        if (!user || courseKey.length < 2) return;
+        addRuleRow({
+            id: rule.id ? String(rule.id) : `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+            user,
+            type: "dropped",
+            courseKey
+        });
+    });
+
+    function ruleExists(user, type, courseKey) {
+        const keyLower = courseKey.toLowerCase();
+        return Array.from(listEl.querySelectorAll('.course-adjust-item')).some((li) => {
+            return li.dataset.user === user
+                && li.dataset.type === type
+                && String(li.dataset.courseKey || "").toLowerCase() === keyLower;
+        });
+    }
+
+    function handleAddRule() {
+        const user = userSelect.value.trim();
+        const courseKey = keyInput.value.trim();
+        const type = typeSelect.value;
+        if (!user) {
+            flashField(userSelect);
+            return;
+        }
+        if (courseKey.length < 2) {
+            flashField(keyInput);
+            return;
+        }
+        if (ruleExists(user, type, courseKey)) {
+            flashField(keyInput);
+            return;
+        }
+        addRuleRow({
+            id: `${Date.now()}${Math.floor(Math.random() * 1000)}`,
+            user,
+            type,
+            courseKey
+        });
+        keyInput.value = "";
+        keyInput.focus();
+    }
+
+    modal.querySelector('#courseAdjustAdd').addEventListener('click', handleAddRule);
+    keyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddRule();
+        }
+    });
+    listEl.addEventListener('click', (e) => {
+        const target = e.target;
+        if (target.classList.contains('remove-course-adjust')) {
+            const li = target.closest('.course-adjust-item');
+            if (li) li.remove();
+        }
+    });
+
+    function closeModal() {
+        try { document.body.removeChild(modal); } catch (e) {}
+        try { document.head.removeChild(style); } catch (e) {}
+    }
+
+    modal.querySelector('#courseAdjustCancelBtn').addEventListener('click', closeModal);
+    modal.querySelector('#courseAdjustSaveBtn').addEventListener('click', async () => {
+        const rules = Array.from(listEl.querySelectorAll('.course-adjust-item')).map((li) => ({
+            id: li.dataset.id,
+            user: li.dataset.user,
+            type: li.dataset.type,
+            courseKey: li.dataset.courseKey
+        }));
+        closeModal();
+        await saveToChromeStorage("courseAdjustRules", rules);
+        let tip = tlang("课程调整已保存。请刷新动态成绩页面。", "Course adjustments saved. Refresh the dynamic score page.");
+        try {
+            const resp = await chrome.runtime.sendMessage({ type: "applyCourseAdjustments" });
+            if (!resp || resp.ok === false) {
+                tip = tlang("课程调整已保存。请重新登录校宝后生效。", "Course adjustments saved. Log in to Schoolis again to apply them.");
+            } else if (resp.rebuilt === false) {
+                tip = tlang("课程调整已保存。下次计算成绩时生效。", "Course adjustments saved. They apply on the next score calculation.");
+            }
+        } catch (error) {
+            tip = tlang("课程调整已保存。请重新登录校宝后生效。", "Course adjustments saved. Log in to Schoolis again to apply them.");
+        }
+        const tipEl = document.getElementById('showReloadTip');
+        if (tipEl) tipEl.innerText = tip;
+    });
 }
 async function getFromChromeStorage(keyName) {
     try {

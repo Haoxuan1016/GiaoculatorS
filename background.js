@@ -81,9 +81,7 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【任务预测】适配包含子类别分数项的科目，嵌套类别下的任务与总分计算现已可用</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【GPA计算】修复部分学科在特定分数下无法正确换算 GPA 的问题</p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【成绩详细】修复 Giaoculator V1 计算科目在成绩详细页无法快速查看分项分数的问题</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【课程调整】可为最近登录的校宝账号设置退课课程。该课程不再进入动态成绩学科列表，也不计入 GPA</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
@@ -91,9 +89,7 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Score Prediction】Subjects with nested score categories are now supported for task editing and total-score calculation</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【GPA Calculation】Fixed incorrect GPA conversion for some subjects at certain score values</p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Grade Details】V1-calculated subjects now show breakdown scores promptly on the grade detail view</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Course Adjustments】A dropped course for a recent Schoolis account is left out of the dynamic score subject list and out of GPA</p>
 
     </div>
     
@@ -858,17 +854,210 @@ function formatNumber(number, decimalPlaces) {
     return String(formatted);
 }
 
+// 子类有有效分数时，父类即使没有自己的任务也要计入科目总分。
+function C_sectionCountsTowardSubject(section) {
+    if (!section || section.scoreIsNull || section.score === null || section.score === undefined) return false;
+    const prop = Number(section.proportion);
+    if (!(prop > 0) || Number.isNaN(Number(section.score))) return false;
+    const tasks = Array.isArray(section.learningTaskAndExamList) ? section.learningTaskAndExamList : [];
+    const children = Array.isArray(section.evaluationProjectList) ? section.evaluationProjectList : [];
+    const hasScoredChild = children.some((child) =>
+        child && !child.scoreIsNull && Number(child.proportion) > 0 && child.score !== null && child.score !== undefined && !Number.isNaN(Number(child.score))
+    );
+    const noRealTasks = tasks.length === 0 || (tasks.length === 1 && (tasks[0].score === null || tasks[0].score === undefined));
+    if (noRealTasks) return hasScoredChild;
+    if (Number(section.score) <= 0) {
+        return hasScoredChild || tasks.some((item) => item && item.score != null);
+    }
+    return true;
+}
+
+function C_collectDescendantTaskIds(project, ids) {
+    const out = ids || new Set();
+    const children = project?.evaluationProjectList;
+    if (!Array.isArray(children)) return out;
+    for (const child of children) {
+        const tasks = child?.learningTaskAndExamList;
+        if (Array.isArray(tasks)) {
+            for (const task of tasks) {
+                if (task && task.id != null) out.add(String(task.id));
+            }
+        }
+        C_collectDescendantTaskIds(child, out);
+    }
+    return out;
+}
+
+// 父类分数 = Σ(子类分数 × 子类占比) / Σ(子类占比)。无分或占比为 0 的子类不参与。
+function C_rollupCompositeCategoryScores(projectList) {
+    if (!Array.isArray(projectList)) return;
+    for (const project of projectList) {
+        const children = project?.evaluationProjectList;
+        if (!Array.isArray(children) || children.length === 0) continue;
+        C_rollupCompositeCategoryScores(children);
+        const duplicatedIds = C_collectDescendantTaskIds(project);
+        if (duplicatedIds.size > 0 && Array.isArray(project.learningTaskAndExamList)) {
+            project.learningTaskAndExamList = project.learningTaskAndExamList.filter((task) => task && !duplicatedIds.has(String(task.id)));
+        }
+        let weighted = 0;
+        let weight = 0;
+        for (const child of children) {
+            const prop = Number(child?.proportion);
+            const score = Number(child?.score);
+            if (!child || child.scoreIsNull || child.score === null || child.score === undefined) continue;
+            if (!(prop > 0) || Number.isNaN(score)) continue;
+            weighted += score * prop;
+            weight += prop;
+        }
+        if (weight > 0) {
+            project.score = parseFloat((weighted / weight).toFixed(2));
+            project.scoreIsNull = false;
+        }
+    }
+}
+
+function C_courseKeyMatchesName(name, courseKey) {
+    if (name === null || name === undefined) return false;
+    const key = String(courseKey ?? "").trim();
+    if (key.length < 2) return false;
+    const nameStr = String(name);
+    const ignoreCase = key.length > 5;
+    const haystack = ignoreCase ? nameStr.toLowerCase() : nameStr;
+    const needle = ignoreCase ? key.toLowerCase() : key;
+    const isBoundary = (ch) => ch === "" || !/[a-z0-9]/i.test(ch);
+    let from = 0;
+    while (from < haystack.length) {
+        const at = haystack.indexOf(needle, from);
+        if (at < 0) return false;
+        const before = at === 0 ? "" : haystack[at - 1];
+        const after = at + needle.length >= haystack.length ? "" : haystack[at + needle.length];
+        // "Computer Science I" is a prefix of "Computer Science II"; don't end inside a word or number.
+        if (isBoundary(before) && isBoundary(after)) return true;
+        from = at + 1;
+    }
+    return false;
+}
+
+function C_courseMatchNames(course) {
+    const names = [];
+    const push = (value) => {
+        if (value === null || value === undefined) return;
+        const text = String(value).trim();
+        if (!text || names.includes(text)) return;
+        names.push(text);
+    };
+    if (Array.isArray(course)) {
+        course.forEach(push);
+        return names;
+    }
+    if (!course || typeof course !== "object") return names;
+    if (Array.isArray(course.matchNames)) course.matchNames.forEach(push);
+    push(course.subjectName);
+    push(course.subjectEName);
+    if (course.subjectInfo) push(course.subjectInfo.ename);
+    push(course.ename);
+    return names;
+}
+
+function C_isDroppedCourse(courseOrNames, rules, currentUser) {
+    if (!currentUser || !Array.isArray(rules) || rules.length === 0) return false;
+    const user = String(currentUser).trim();
+    if (!user) return false;
+    const names = C_courseMatchNames(courseOrNames);
+    if (names.length === 0) return false;
+    for (const rule of rules) {
+        if (!rule || rule.type !== "dropped") continue;
+        if (String(rule.user ?? "").trim() !== user) continue;
+        for (const name of names) {
+            if (C_courseKeyMatchesName(name, rule.courseKey)) return true;
+        }
+    }
+    return false;
+}
+
+async function C_readStorageValue(keyName) {
+    try {
+        const result = await chrome.storage.local.get(keyName);
+        return result[keyName];
+    } catch (error) {
+        console.warn("[C_readStorageValue]", keyName, error);
+        return undefined;
+    }
+}
+
+async function C_resolveAdjustUser() {
+    try {
+        const response = await fetch("https://tsinglanstudent.schoolis.cn/api/MemberShip/GetCurrentStudentInfo");
+        if (response.ok) {
+            const result = await response.json();
+            const name = result?.data?.loginName;
+            if (name && String(name).trim()) return String(name).trim();
+        }
+    } catch (error) {
+        console.warn("[C_resolveAdjustUser] GetCurrentStudentInfo failed:", error);
+    }
+    try {
+        const stored = await C_readStorageValue("lastLoginUser");
+        const name = stored && stored.lastLoginUser;
+        if (name && String(name).trim()) return String(name).trim();
+    } catch (error) {
+        console.warn("[C_resolveAdjustUser] lastLoginUser failed:", error);
+    }
+    console.warn("[C_resolveAdjustUser] No current student. Drop rules will not be applied.");
+    return null;
+}
+
+async function C_loadCourseAdjustContext() {
+    const stored = await C_readStorageValue("courseAdjustRules");
+    const rules = Array.isArray(stored) ? stored : [];
+    const hasDropped = rules.some((rule) => rule && rule.type === "dropped" && String(rule.courseKey ?? "").trim().length >= 2);
+    if (!hasDropped) return { rules, user: null };
+    const user = await C_resolveAdjustUser();
+    return { rules, user };
+}
+
+async function C_applyCourseAdjustments() {
+    const settings = await M_GetSettings();
+    const calcRange = Number(settings && settings.calcRange) || 0;
+    if (!calcRange) return { rebuilt: false };
+    const { ids } = await C_GetSemesters(calcRange);
+    const allStorageData = await new Promise((resolve) => {
+        chrome.storage.local.get(null, (items) => resolve(items || {}));
+    });
+    let rebuiltAny = false;
+    for (let i = 0; i < ids.length; i++) {
+        const semesterId = ids[i];
+        if (semesterId === null || semesterId === undefined) continue;
+        const prefix = String(semesterId) + "|";
+        const hasCourses = Object.keys(allStorageData).some((key) => {
+            if (!key.startsWith(prefix)) return false;
+            const subjectIdPart = key.split("|")[1];
+            return subjectIdPart !== undefined && subjectIdPart !== "" && !Number.isNaN(Number(subjectIdPart));
+        });
+        // Don't replace a semester's score list with an empty redirect when nothing is stored yet.
+        if (!hasCourses) continue;
+        const ok = await C_BuildDynamicScoreRule(semesterId);
+        if (ok === false) {
+            throw new Error("C_BuildDynamicScoreRule failed for semester " + semesterId);
+        }
+        rebuiltAny = true;
+    }
+    return { rebuilt: rebuiltAny };
+}
+
 async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterType, year) {
     console.log("BGN_END_INFO",bgn_info,end_info);
     const subjectData = []; // 存储每个科目的数据
     let specialWeightRules = await getFromChromeStorage("specialWeightRules")
     let weightRules = await getFromChromeStorage("subjectWeightRules")
+    const adjust = await C_loadCourseAdjustContext();
+    const subjects = Object.values(idList).filter((subject) => !C_isDroppedCourse(subject, adjust.rules, adjust.user));
 
     let subjectSequence = 1;
     // 遍历每个科目
-    for (const subject of Object.values(idList)) {
+    for (const subject of subjects) {
         console.log("sub",subject)
-        M_send_comp_msg("show_process",{cur: subjectSequence,oval: Object.keys(idList).length, text:subject.subjectName, isRefresh:false},-99999);   
+        M_send_comp_msg("show_process",{cur: subjectSequence,oval: subjects.length, text:subject.subjectName, isRefresh:false},-99999);   
         subjectSequence++;
         const { classId, subjectId, subjectName, className, subjectCode } = subject;
         if(classId === -1){
@@ -905,26 +1094,13 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
                 let subjectTotalProp = 0;
 
                 let flag_AllNull = true;
-                // 计算成绩加权平均分
+                // 计算成绩加权平均分。复合类别的任务挂在子类上，父类自己的任务列表可能是空的，
+                // 但这种父类的 score 已经是按子类占比合成的，必须计入科目总分。
                 for (const section of data.data.evaluationProjectList) {
-                    if (!(section.learningTaskAndExamList.length === 0 || 
-                        (section.learningTaskAndExamList.length === 1 && section.learningTaskAndExamList[0].score === null))) {
-                            if(section.score <= 0 ){
-                                for(const item of section.learningTaskAndExamList){
-                                    if(item.score != null){
-                                        flag_AllNull = false;
-                                        subjectScore += (section.score * section.proportion);
-                                        subjectTotalProp += section.proportion;
-                                        break;
-                                    }
-                                }
-                            }else{
-                                flag_AllNull = false;
-                                subjectScore += (section.score * section.proportion);
-                                subjectTotalProp += section.proportion;
-                            }
-                            
-                    }
+                    if (!C_sectionCountsTowardSubject(section)) continue;
+                    flag_AllNull = false;
+                    subjectScore += (section.score * section.proportion);
+                    subjectTotalProp += section.proportion;
                 }
 
                 if(flag_AllNull){
@@ -1045,8 +1221,12 @@ async function C_fetchOriginalRequest(smsId) {
         console.log("OriginalData:", originalCourseInfoList);
 
         isFetchOriginal = false;
+        const adjust = await C_loadCourseAdjustContext();
 
         for (const courseInfo of originalCourseInfoList) {
+            if (C_isDroppedCourse(courseInfo, adjust.rules, adjust.user)) {
+                continue;
+            }
             const subjectInfo = await C_fetchSubjectEName(smsId, courseInfo.subjectId);
 
             const course = {
@@ -1151,7 +1331,7 @@ async function C_BuildDynamicScoreRule(semesterId) {
 
     if (!semesterId) {
         console.error("[C_BuildDynamicScoreRule] Invalid semester ID.");
-        return;
+        return false;
     }
      
     const mappingRules = await C_FetchMappingRules(semesterId);
@@ -1215,16 +1395,21 @@ async function C_BuildDynamicScoreRule(semesterId) {
         });
 
         const keysToUse = classScopedCourseKeys.length > 0 ? classScopedCourseKeys : legacyCourseKeys;
+        const adjust = await C_loadCourseAdjustContext();
 
         keysToUse.forEach((key) => {
             const courseData = allStorageData[key];
             if (!courseData || courseData.subjectId === undefined) {
                 return;
             }
+            if (C_isDroppedCourse(courseData, adjust.rules, adjust.user)) {
+                return;
+            }
 
             gpalist.push({
                 subjectName: courseData?.subjectEName ?? '',
-                subjectScore: courseData?.subjectScore ?? null
+                subjectScore: courseData?.subjectScore ?? null,
+                matchNames: [courseData?.subjectName, courseData?.subjectEName, courseData?.subjectInfo?.ename].filter(Boolean)
             });
 
             const className = courseData?.className ?? '';
@@ -1284,8 +1469,10 @@ async function C_BuildDynamicScoreRule(semesterId) {
                 //console.log("[C_BuildDynamicScoreRule] Rule created successfully.");
             }
         );
+        return true;
     } catch (error) {
         console.error("[C_BuildDynamicScoreRule] Error:", error);
+        return false;
     }   
 }
 
@@ -1918,6 +2105,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
             }
             break;
+        case "applyCourseAdjustments":
+            (async () => {
+                try {
+                    const result = await C_applyCourseAdjustments();
+                    sendResponse({ ok: true, rebuilt: !!(result && result.rebuilt) });
+                } catch (error) {
+                    console.error("[applyCourseAdjustments]", error);
+                    sendResponse({ ok: false, error: String(error && error.message || error) });
+                }
+            })();
+            return true;
     }
 
     sendResponse({ status: "received" }); // 确保响应，不然可能报错
@@ -2107,6 +2305,10 @@ function NameInList(name, list) {
 
 
 async function C_CalcGPAForSemester(semesterId,gpalist,source) {
+    const adjust = await C_loadCourseAdjustContext();
+    if (Array.isArray(gpalist)) {
+        gpalist = gpalist.filter((subject) => !C_isDroppedCourse(subject, adjust.rules, adjust.user));
+    }
     let weightRules = await getFromChromeStorage("subjectWeightRules")
     let specialWeightRules = await getFromChromeStorage("specialWeightRules")
     console.log("weightrules",weightRules);
@@ -2233,8 +2435,13 @@ async function C_CalcGPAForSemester(semesterId,gpalist,source) {
     }
     
     console.log(totalWeight,weightedGPA,nonweightedGPA);
-    weightedGPA /= totalWeight;
-    nonweightedGPA /= totalWeight;
+    if (totalWeight > 0) {
+        weightedGPA /= totalWeight;
+        nonweightedGPA /= totalWeight;
+    } else {
+        weightedGPA = 0;
+        nonweightedGPA = 0;
+    }
     
     saveToChromeStorage(`gpaList${semesterId}`, gpalist);
     let schoolisGPA = null;
@@ -4045,6 +4252,11 @@ async function getAccessToken() {
       "gcalcHiddenState": gcalcHiddenState || null
     };
 
+    // 复合类别的分数来自子类占比，不能再被当成普通任务平均掉。
+    if (Array.isArray(targetCategory.evaluationProjectList) && targetCategory.evaluationProjectList.length > 0) {
+      return;
+    }
+
     // Prevent adding duplicate tasks if the function is run multiple times
     if (!targetCategory.learningTaskAndExamList.some(task => task.id === id)) {
       targetCategory.learningTaskAndExamList.push(newLearningTask);
@@ -4133,26 +4345,7 @@ async function getAccessToken() {
       childCategory.scoreIsNull = true;
     }
 
-    // Calculate parent category score based on children
-    if (parentCategory.evaluationProjectList.length > 0) {
-      const totalChildScore = parentCategory.evaluationProjectList.reduce((sum, child) => {
-        if (!child.scoreIsNull && child.proportion > 0) {
-          return sum + (child.score * child.proportion);
-        }
-        return sum;
-      }, 0);
-      const totalChildProportion = parentCategory.evaluationProjectList.reduce((sum, child) => {
-        if (!child.scoreIsNull && child.proportion > 0) {
-          return sum + child.proportion;
-        }
-        return sum;
-      }, 0);
-      
-      if (totalChildProportion > 0) {
-        parentCategory.score = parseFloat((totalChildScore / totalChildProportion).toFixed(2));
-        parentCategory.scoreIsNull = false;
-      }
-    }
+    C_rollupCompositeCategoryScores([parentCategory]);
   }
 
   getFinalObject() {
@@ -4220,16 +4413,16 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
           }
       }
 
-      // Handle 2-layer evaProjects hierarchy
+      // 同一任务的 evaProjects 同时包含父类和子类。父类那条只是容器，
+      // 若再走 formDataJSON，任务会被复制到父类上，父类分数变成任务的算术平均（33/67 变成 50/50）。
       for (const evaProject of data.evaProjects) {
         if (evaProject.proportion === 0 || evaProject.proportion === null || evaProject.proportion === undefined) continue;
+        const isAncestor = data.evaProjects.some((other) => Number(other.parentProId) > 0 && Number(other.parentProId) === Number(evaProject.id));
+        if (isAncestor) continue;
 
-        // Check if this is a nested project (has parentProId > 0)
-        if (evaProject.parentProId > 0) {
-          // This is a child project, find its parent
-          const parentProject = data.evaProjects.find(p => p.id === evaProject.parentProId);
+        if (Number(evaProject.parentProId) > 0) {
+          const parentProject = data.evaProjects.find((p) => Number(p.id) === Number(evaProject.parentProId));
           if (parentProject) {
-            // Add to nested structure: parent -> child
             scoreDataManager.formDataJSONNested(
               data.learningTaskName,
               scoreToUse,
@@ -4245,7 +4438,6 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
             );
           }
         } else {
-          // This is a top-level project
           scoreDataManager.formDataJSON(data.learningTaskName, scoreToUse, data.totalScore, data.id, evaProject.eName, evaProject.name, evaProject.proportion, hiddenState);
         }
       }
@@ -4292,6 +4484,7 @@ async function getSubjectGrades(schoolSemesterId, subjectId, beginDate, endDate,
 
     // --- Final Weighted Calculation ---
     const gradeDetails = scoreDataManager.getFinalObject();
+    C_rollupCompositeCategoryScores(gradeDetails.data.evaluationProjectList);
     const assignmentList = gradeDetails.data.evaluationProjectList;
     const totalProportionAll = assignmentList.reduce((sum, project) => sum + (Number(project.proportion) || 0), 0);
     const hasFinalExamPlaceholder = assignmentList.some(project => 
