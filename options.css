@@ -467,7 +467,9 @@ body {
     }
 
 
-    #customGPAweight {
+    #customGPAweight,
+    #bindMSAccountsBtn,
+    #courseAdjustBtn {
         background-color: #f0f0f0; /* 浅灰色背景 */
         color: #333; /* 深灰色文字 */
         border: 1px solid #ccc; /* 浅灰色边框 */
@@ -481,39 +483,17 @@ body {
         cursor: pointer;
         transition: background-color 0.3s ease, border-color 0.3s ease; /* 添加边框颜色过渡 */
     }
-    
-    #customGPAweight:hover {
+
+    #customGPAweight:hover,
+    #bindMSAccountsBtn:hover,
+    #courseAdjustBtn:hover {
         background-color: #e0e0e0; /* 悬停时稍微加深背景 */
         border-color: #bbb; /* 悬停时稍微加深边框 */
     }
-    
-    #customGPAweight:focus {
-        outline: none;
-        box-shadow: 0 0 0 2px rgba(18, 138, 66, 0.3); /* 浅绿色阴影焦点效果 */
-    }
 
-
-    #bindMSAccountsBtn {
-        background-color: #f0f0f0; /* 浅灰色背景 */
-        color: #333; /* 深灰色文字 */
-        border: 1px solid #ccc; /* 浅灰色边框 */
-        padding: 6px 14px;
-        text-align: center;
-        text-decoration: none;
-        display: inline-block;
-        font-size: 13px;
-        margin-top: -10px;
-        border-radius: 5px;
-        cursor: pointer;
-        transition: background-color 0.3s ease, border-color 0.3s ease; /* 添加边框颜色过渡 */
-    }
-    
-    #bindMSAccountsBtn:hover {
-        background-color: #e0e0e0; /* 悬停时稍微加深背景 */
-        border-color: #bbb; /* 悬停时稍微加深边框 */
-    }
-    
-    #bindMSAccountsBtn:focus {
+    #customGPAweight:focus,
+    #bindMSAccountsBtn:focus,
+    #courseAdjustBtn:focus {
         outline: none;
         box-shadow: 0 0 0 2px rgba(18, 138, 66, 0.3); /* 浅绿色阴影焦点效果 */
     }

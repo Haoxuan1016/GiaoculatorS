@@ -1007,6 +1007,60 @@ async function C_resolveAdjustUser() {
     return null;
 }
 
+const droppedLabelsBySemester = {};
+
+function C_droppedSubjectLabel(course) {
+    if (!course) return "";
+    if (typeof course === "string") return course.trim();
+    return String(course.subjectEName || course.subjectName || course.ename || "").trim();
+}
+
+function C_noteDroppedSubject(semesterId, course) {
+    const label = C_droppedSubjectLabel(course);
+    if (!semesterId || !label) return;
+    const id = String(semesterId);
+    if (!droppedLabelsBySemester[id]) droppedLabelsBySemester[id] = [];
+    if (!droppedLabelsBySemester[id].includes(label)) droppedLabelsBySemester[id].push(label);
+}
+
+async function C_removedSubjectLabels(semesterId, adjust, extraLabels) {
+    const labels = [];
+    const add = (value) => {
+        const text = String(value ?? "").trim();
+        if (!text || labels.includes(text)) return;
+        labels.push(text);
+    };
+    if (!adjust || !adjust.user || !Array.isArray(adjust.rules)) return labels;
+    const stillDropped = (label) => C_isDroppedCourse({ subjectName: label, subjectEName: label }, adjust.rules, adjust.user);
+
+    (droppedLabelsBySemester[String(semesterId)] || []).forEach((label) => {
+        if (stillDropped(label)) add(label);
+    });
+    (extraLabels || []).forEach((label) => {
+        if (stillDropped(label)) add(label);
+    });
+
+    const allStorageData = await new Promise((resolve) => {
+        chrome.storage.local.get(null, (items) => resolve(items || {}));
+    });
+    const prefix = String(semesterId) + "|";
+    Object.keys(allStorageData).forEach((key) => {
+        if (!key.startsWith(prefix)) return;
+        const subjectIdPart = key.split("|")[1];
+        if (subjectIdPart === undefined || subjectIdPart === "" || Number.isNaN(Number(subjectIdPart))) return;
+        const course = allStorageData[key];
+        if (!C_isDroppedCourse(course, adjust.rules, adjust.user)) return;
+        add(C_droppedSubjectLabel(course));
+    });
+
+    const previous = await C_readStorageValue(`gpa${semesterId}`);
+    const previousLabels = Array.isArray(previous?.removedSubjects) ? previous.removedSubjects : [];
+    previousLabels.forEach((label) => {
+        if (stillDropped(label)) add(label);
+    });
+    return labels;
+}
+
 async function C_loadCourseAdjustContext() {
     const stored = await C_readStorageValue("courseAdjustRules");
     const rules = Array.isArray(stored) ? stored : [];
@@ -1051,7 +1105,15 @@ async function C_init_V2Calc(idList, semesterId, bgn_info, end_info, semesterTyp
     let specialWeightRules = await getFromChromeStorage("specialWeightRules")
     let weightRules = await getFromChromeStorage("subjectWeightRules")
     const adjust = await C_loadCourseAdjustContext();
-    const subjects = Object.values(idList).filter((subject) => !C_isDroppedCourse(subject, adjust.rules, adjust.user));
+    delete droppedLabelsBySemester[String(semesterId)];
+    const subjects = [];
+    for (const subject of Object.values(idList || {})) {
+        if (C_isDroppedCourse(subject, adjust.rules, adjust.user)) {
+            C_noteDroppedSubject(semesterId, subject);
+            continue;
+        }
+        subjects.push(subject);
+    }
 
     let subjectSequence = 1;
     // 遍历每个科目
@@ -1225,6 +1287,7 @@ async function C_fetchOriginalRequest(smsId) {
 
         for (const courseInfo of originalCourseInfoList) {
             if (C_isDroppedCourse(courseInfo, adjust.rules, adjust.user)) {
+                C_noteDroppedSubject(smsId, courseInfo);
                 continue;
             }
             const subjectInfo = await C_fetchSubjectEName(smsId, courseInfo.subjectId);
@@ -1403,6 +1466,7 @@ async function C_BuildDynamicScoreRule(semesterId) {
                 return;
             }
             if (C_isDroppedCourse(courseData, adjust.rules, adjust.user)) {
+                C_noteDroppedSubject(semesterId, courseData);
                 return;
             }
 
@@ -2306,9 +2370,20 @@ function NameInList(name, list) {
 
 async function C_CalcGPAForSemester(semesterId,gpalist,source) {
     const adjust = await C_loadCourseAdjustContext();
+    const removedNow = [];
     if (Array.isArray(gpalist)) {
-        gpalist = gpalist.filter((subject) => !C_isDroppedCourse(subject, adjust.rules, adjust.user));
+        const kept = [];
+        for (const subject of gpalist) {
+            if (C_isDroppedCourse(subject, adjust.rules, adjust.user)) {
+                const label = C_droppedSubjectLabel(subject);
+                if (label) removedNow.push(label);
+            } else {
+                kept.push(subject);
+            }
+        }
+        gpalist = kept;
     }
+    const removedSubjects = await C_removedSubjectLabels(semesterId, adjust, removedNow);
     let weightRules = await getFromChromeStorage("subjectWeightRules")
     let specialWeightRules = await getFromChromeStorage("specialWeightRules")
     console.log("weightrules",weightRules);
@@ -2456,7 +2531,7 @@ async function C_CalcGPAForSemester(semesterId,gpalist,source) {
     }
     
     console.log("save",semesterId,{gpa:weightedGPA,noweight_gpa:nonweightedGPA,schoolisGPA:schoolisGPA});
-    saveToChromeStorage(`gpa${semesterId}`, {gpa:weightedGPA,noweight_gpa:nonweightedGPA,schoolisGPA:schoolisGPA,source});
+    saveToChromeStorage(`gpa${semesterId}`, {gpa:weightedGPA,noweight_gpa:nonweightedGPA,schoolisGPA:schoolisGPA,source,removedSubjects});
 
     if(schoolisGPA===null){
         const jsonResponse = {

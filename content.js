@@ -2321,7 +2321,7 @@ function fun_isLiveRealtimeOverlay(el) {
 }
 
 function fun_pruneStaleRealtimeOverlays() {
-    ["gcalc_gpacntstate", "gcalc_editedNotice", "gcalc_clicktoshowDiyBox", "gcalc_editedNoticeBtn", "gcalc_diyboxbtn", "gcalc_v1WarnLi"].forEach((id) => {
+    ["gcalc_gpacntstate", "gcalc_editedNotice", "gcalc_clicktoshowDiyBox", "gcalc_editedNoticeBtn", "gcalc_diyboxbtn", "gcalc_v1WarnLi", "gcalc_removedSubjects"].forEach((id) => {
         const el = document.getElementById(id);
         if (el && !fun_isLiveRealtimeOverlay(el)) {
             try { el.remove(); } catch (e) {}
@@ -4741,14 +4741,62 @@ async function showGPABox(){
                 }
                 
             });
-        
-        
-        
+
+            gcRenderRemovedSubjectNote(smsId);
             //e.g: subline.children[0].innertext  (0:Grey,1:Black)
         });
     });
    
 
+}
+
+function gcRemovedSubjectSentence(names) {
+    if (names.length === 1) {
+        return tlang(
+            `科目 ${names[0]} 已从本次计算中排除`,
+            `Subject ${names[0]} is removed from this calculation`
+        );
+    }
+    return tlang(
+        `科目 ${names.join("、")} 已从本次计算中排除`,
+        `Subjects ${names.join(", ")} are removed from this calculation`
+    );
+}
+
+function gcRenderRemovedSubjectNote(smsId) {
+    chrome.storage.local.get(`gpa${smsId}`, function(stored) {
+        const record = stored[`gpa${smsId}`];
+        const names = Array.isArray(record?.removedSubjects)
+            ? record.removedSubjects.map((name) => String(name).trim()).filter(Boolean)
+            : [];
+        const tryPlace = (attempt) => {
+            const wrap = document.getElementById("gcalc_gpacntstate");
+            const old = document.getElementById("gcalc_removedSubjects");
+            if (!wrap || !fun_isLiveRealtimeOverlay(wrap)) {
+                if (old && !fun_isLiveRealtimeOverlay(old)) old.remove();
+                if (names.length && attempt < 20) setTimeout(() => tryPlace(attempt + 1), 100);
+                return;
+            }
+            if (!names.length) {
+                if (old) old.remove();
+                return;
+            }
+            let line = old;
+            if (!line || line.parentElement !== wrap) {
+                if (line) line.remove();
+                line = document.createElement("li");
+                line.id = "gcalc_removedSubjects";
+                line.className = "ng-scope";
+                wrap.appendChild(line);
+            }
+            line.textContent = "";
+            const text = document.createElement("p");
+            text.textContent = gcRemovedSubjectSentence(names);
+            text.style.cssText = "margin: 6px 0 2px 0; font-size: 12px; color: #8a8a8a; line-height: 1.45;";
+            line.appendChild(text);
+        };
+        tryPlace(0);
+    });
 }
 
 function readAndCombineLongStringFromChromeStorage(key) {
