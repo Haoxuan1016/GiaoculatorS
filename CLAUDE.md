@@ -22,6 +22,7 @@ The "brain" — all network logic, calculation, and Microsoft Graph integration 
 - **`chrome.declarativeNetRequest`** is used to *inject* calculated GPA into the page by redirecting the Schoolis dynamic-score endpoint to a synthetic response. Rule ID 1000 is reserved for a `&gcalc=noRedirect` allow-rule that lets the extension's own fetches bypass redirection. See `C_BuildDynamicScoreRule` and `M_initDeclaritiveRules`.
 - **Microsoft auth** uses chrome.identity + OAuth2 PKCE against the hard-coded Tsinglan Azure tenant (`TENANT` const). Access token is refreshed via `exchangeForAccess()`.
 
+
 ### Content scripts (injected into Schoolis pages)
 - **`content_preload.js`** + **`content_instantEdit.js`** run at `document_start` — login page beautification and instant score-edit hook on `/task/list/detail`.
 - **`content.js`** (~5500 lines) runs after page load. Its `chrome.runtime.onMessage.addListener` (~line 645) is a giant `if/else` chain keyed on `message.type` — this is the entire message API surface from background → page.

@@ -81,15 +81,17 @@ chrome.runtime.onInstalled.addListener(function(details) {
         <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
         <strong>Giaoculator已更新！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-      <p style="margin-bottom: 2px; margin-top: 2px;">· 【课程调整】可为最近登录的校宝账号设置退课课程。该课程不再进入动态成绩学科列表，也不计入 GPA</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【计算方式】计算方式升级为 V1.1，修复了部分科目的计算偏差</p>
+      <p style="margin-bottom: 2px; margin-top: 2px;">· 【课程调整】设置中可为最近登录的校宝账号设置退课课程，已退课科目不再计入 GPA</p>
     </div>
     `,`
                 <div style="color: white; font-size: 11px;">
       <p style="margin-bottom: 2px; margin-top: 2px;">
-        <img src="${chrome.runtime.getURL('icon.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
-        <strong>Giaoculator Updated！【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
+        <img src="${chrome.runtime.getURL('iconV2.png')   }" style="width: 25px; height: 25px; vertical-align: middle; margin-right: 3px;">
+        <strong>Giaoculator Updated!【${details.previousVersion}→${chrome.runtime.getManifest().version}】</strong>
       </p>
-        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Course Adjustments】A dropped course for a recent Schoolis account is left out of the dynamic score subject list and out of GPA</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Calculation】Scoring is now V1.1, fixing incorrect results on some subjects</p>
+        <p style="margin-bottom: 2px; margin-top: 2px;">· 【Course Adjustments】In Settings, you can mark dropped courses for the Schoolis account you last signed in with. Those subjects no longer count toward GPA</p>
 
     </div>
     
